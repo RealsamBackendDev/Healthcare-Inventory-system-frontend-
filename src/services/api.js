@@ -41,58 +41,83 @@ export class ApiError extends Error {
                                                                       }
                                                                       };
 
-                                                                      export const request = async (path, { method = 'GET', body, headers = {}, signal } = {}) => {
-                                                                        const session = getStoredSession();
-                                                                          const requestHeaders = { Accept: 'application/json', ...headers };
-                                                                            const options = { method, headers: requestHeaders, signal };
+                                                                      const handleResponse = async (response, session) => {
+                                                                        const payload = await parseBody(response);
 
-                                                                              if (body !== undefined) {
-                                                                                  requestHeaders['Content-Type'] = 'application/json';
-                                                                                      options.body = JSON.stringify(body);
-                                                                                        }
+                                                                          if (!response.ok || payload?.success === false) {
+                                                                              const details = payload?.error || {};
+                                                                                  if (response.status === 401 && session?.token) {
+                                                                                        clearStoredSession();
+                                                                                              window.dispatchEvent(new Event('hcis:session-expired'));
+                                                                                                  }
+                                                                                                      throw new ApiError(details.message || 'The request could not be completed.', {
+                                                                                                            status: response.status,
+                                                                                                                  code: details.code || 'REQUEST_FAILED',
+                                                                                                                        details: details.details || null
+                                                                                                                            });
+                                                                                                                              }
 
-                                                                                          if (session?.token) {
-                                                                                              requestHeaders.Authorization = `Bearer ${session.token}`;
-                                                                                                }
+                                                                                                                                return payload?.data ?? null;
+                                                                                                                                };
 
-                                                                                                  let response;
-                                                                                                    try {
-                                                                                                        response = await fetch(`${BASE_URL}${path}`, options);
-                                                                                                          } catch (error) {
-                                                                                                              if (error.name === 'AbortError') {
-                                                                                                                    throw error;
-                                                                                                                        }
-                                                                                                                            throw new ApiError('Cannot reach the server. Check that the API is running and try again.', {
-                                                                                                                                  code: 'NETWORK_ERROR'
-                                                                                                                                      });
-                                                                                                                                        }
+                                                                                                                                export const request = async (path, { method = 'GET', body, headers = {}, signal } = {}) => {
+                                                                                                                                  const session = getStoredSession();
+                                                                                                                                    const requestHeaders = { Accept: 'application/json', ...headers };
+                                                                                                                                      const options = { method, headers: requestHeaders, signal };
 
-                                                                                                                                          const payload = await parseBody(response);
+                                                                                                                                        if (body !== undefined) {
+                                                                                                                                            requestHeaders['Content-Type'] = 'application/json';
+                                                                                                                                                options.body = JSON.stringify(body);
+                                                                                                                                                  }
 
-                                                                                                                                            if (!response.ok || payload?.success === false) {
-                                                                                                                                                const details = payload?.error || {};
-                                                                                                                                                    if (response.status === 401 && session?.token) {
-                                                                                                                                                          clearStoredSession();
-                                                                                                                                                                window.dispatchEvent(new Event('hcis:session-expired'));
-                                                                                                                                                                    }
-                                                                                                                                                                        throw new ApiError(details.message || 'The request could not be completed.', {
-                                                                                                                                                                              status: response.status,
-                                                                                                                                                                                    code: details.code || 'REQUEST_FAILED',
-                                                                                                                                                                                          details: details.details || null
-                                                                                                                                                                                              });
-                                                                                                                                                                                                }
+                                                                                                                                                    if (session?.token) {
+                                                                                                                                                        requestHeaders.Authorization = `Bearer ${session.token}`;
+                                                                                                                                                          }
 
-                                                                                                                                                                                                  return payload?.data ?? null;
-                                                                                                                                                                                                  };
+                                                                                                                                                            let response;
+                                                                                                                                                              try {
+                                                                                                                                                                  response = await fetch(`${BASE_URL}${path}`, options);
+                                                                                                                                                                    } catch (error) {
+                                                                                                                                                                        if (error.name === 'AbortError') {
+                                                                                                                                                                              throw error;
+                                                                                                                                                                                  }
+                                                                                                                                                                                      throw new ApiError('Cannot reach the server. Check that the API is running and try again.', {
+                                                                                                                                                                                            code: 'NETWORK_ERROR'
+                                                                                                                                                                                                });
+                                                                                                                                                                                                  }
 
-                                                                                                                                                                                                  export const get = (path, options) => request(path, { ...options, method: 'GET' });
+                                                                                                                                                                                                    return handleResponse(response, session);
+                                                                                                                                                                                                    };
 
-                                                                                                                                                                                                  export const post = (path, body, options) => request(path, { ...options, method: 'POST', body });
+                                                                                                                                                                                                    export const uploadFile = async (path, file, fieldName = 'file') => {
+                                                                                                                                                                                                      const session = getStoredSession();
+                                                                                                                                                                                                        const formData = new FormData();
+                                                                                                                                                                                                          formData.append(fieldName, file);
 
-                                                                                                                                                                                                  export const patch = (path, body, options) => request(path, { ...options, method: 'PATCH', body });
+                                                                                                                                                                                                            let response;
+                                                                                                                                                                                                              try {
+                                                                                                                                                                                                                  response = await fetch(`${BASE_URL}${path}`, {
+                                                                                                                                                                                                                        method: 'POST',
+                                                                                                                                                                                                                              headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {},
+                                                                                                                                                                                                                                    body: formData
+                                                                                                                                                                                                                                        });
+                                                                                                                                                                                                                                          } catch (error) {
+                                                                                                                                                                                                                                              throw new ApiError('The file could not be uploaded. Check your connection and try again.', {
+                                                                                                                                                                                                                                                    code: 'NETWORK_ERROR'
+                                                                                                                                                                                                                                                        });
+                                                                                                                                                                                                                                                          }
 
-                                                                                                                                                                                                  export const put = (path, body, options) => request(path, { ...options, method: 'PUT', body });
+                                                                                                                                                                                                                                                            return handleResponse(response, session);
+                                                                                                                                                                                                                                                            };
 
-                                                                                                                                                                                                  export const remove = (path, options) => request(path, { ...options, method: 'DELETE' });
+                                                                                                                                                                                                                                                            export const get = (path, options) => request(path, { ...options, method: 'GET' });
 
-                                                                                                                                                                                                  export { BASE_URL, SESSION_KEY };
+                                                                                                                                                                                                                                                            export const post = (path, body, options) => request(path, { ...options, method: 'POST', body });
+
+                                                                                                                                                                                                                                                            export const patch = (path, body, options) => request(path, { ...options, method: 'PATCH', body });
+
+                                                                                                                                                                                                                                                            export const put = (path, body, options) => request(path, { ...options, method: 'PUT', body });
+
+                                                                                                                                                                                                                                                            export const remove = (path, options) => request(path, { ...options, method: 'DELETE' });
+
+                                                                                                                                                                                                                                                            export { BASE_URL, SESSION_KEY };
