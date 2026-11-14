@@ -4,19 +4,19 @@ import { useAuth } from '../hooks/useAuth.js';
 
 export default function ProtectedRoute() {
   const { status, session } = useAuth();
-    const location = useLocation();
+  const location = useLocation();
 
-      if (status === 'loading') {
-          return <LoadingScreen message="Preparing your workspace" />;
-            }
+  if (status === 'loading') {
+    return <LoadingScreen message="Preparing your workspace" />;
+  }
 
-              if (status !== 'authenticated') {
-                  return <Navigate to="/login" state={{ from: location }} replace />;
-                    }
+  if (status !== 'authenticated') {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
-                      if (session?.user?.mustChangePassword && location.pathname !== '/change-password') {
-                          return <Navigate to="/change-password" replace />;
-                            }
+  if (session?.user?.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
+  }
 
-                              return <Outlet />;
-                              }
+  return <Outlet />;
+}

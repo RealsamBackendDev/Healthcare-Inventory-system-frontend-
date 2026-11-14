@@ -23,57 +23,57 @@ import { allNavigationItems } from '../utils/navigation.js';
 
 export default function AppRoutes() {
   return (
-      <Routes>
-            <Route
-                    path="/login"
-                            element={
-                                      <PublicRoute>
-                                                  <LoginPage />
-                                                            </PublicRoute>
-                                                                    }
-                                                                          />
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
 
-                                                                                <Route element={<ProtectedRoute />}>
-                                                                                        <Route element={<AppLayout />}>
-                                                                                                  <Route index element={<Navigate to="/dashboard" replace />} />
-                                                                                                            <Route path="/dashboard" element={<DashboardPage />} />
-                                                                                                                      <Route path="/inventory" element={<InventoryPage />} />
-                                                                                                                                <Route path="/drugs" element={<DrugsPage />} />
-                                                                                                                                          <Route path="/receiving" element={<ReceivingPage />} />
-                                                                                                                                                    <Route path="/dispensing" element={<DispensingPage />} />
-                                                                                                                                                              <Route path="/adjustments" element={<AdjustmentsPage />} />
-                                                                                                                                                                        <Route path="/requisitions" element={<RequisitionsPage />} />
-                                                                                                                                                                                  <Route path="/expiry" element={<ExpiryPage />} />
-                                                                                                                                                                                            <Route path="/reports" element={<ReportsPage />} />
-                                                                                                                                                                                                      <Route path="/users" element={<UsersPage />} />
-                                                                                                                                                                                                                <Route path="/settings" element={<SettingsPage />} />
-                                                                                                                                                                                                                          <Route path="/audit" element={<AuditPage />} />
-                                                                                                                                                                                                                                    <Route path="/profile" element={<ProfilePage />} />
-                                                                                                                                                                                                                                              {allNavigationItems
-                                                                                                                                                                                                                                                          .filter(
-                                                                                                                                                                                                                                                                        (item) =>
-                                                                                                                                                                                                                                                                                        ![
-                                                                                                                                                                                                                                                                                                          '/dashboard',
-                                                                                                                                                                                                                                                                                                                            '/inventory',
-                                                                                                                                                                                                                                                                                                                                              '/drugs',
-                                                                                                                                                                                                                                                                                                                                                                '/receiving',
-                                                                                                                                                                                                                                                                                                                                                                                  '/dispensing',
-                                                                                                                                                                                                                                                                                                                                                                                                    '/adjustments',
-                                                                                                                                                                                                                                                                                                                                                                                                                      '/requisitions',
-                                                                                                                                                                                                                                                                                                                                                                                                                                        '/expiry',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                          '/reports',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            '/users',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              '/settings',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                '/audit'
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ].includes(item.to)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            )
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        .map((item) => (
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <Route key={item.to} path={item.to} element={<ComingSoon title={item.label} />} />
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ))}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <Route path="/change-password" element={<ChangePasswordPage />} />
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <Route path="*" element={<NotFound />} />
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </Route>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </Route>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </Routes>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          }
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppLayout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/drugs" element={<DrugsPage />} />
+          <Route path="/receiving" element={<ReceivingPage />} />
+          <Route path="/dispensing" element={<DispensingPage />} />
+          <Route path="/adjustments" element={<AdjustmentsPage />} />
+          <Route path="/requisitions" element={<RequisitionsPage />} />
+          <Route path="/expiry" element={<ExpiryPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/audit" element={<AuditPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          {allNavigationItems
+            .filter(
+              (item) =>
+                ![
+                  '/dashboard',
+                  '/inventory',
+                  '/drugs',
+                  '/receiving',
+                  '/dispensing',
+                  '/adjustments',
+                  '/requisitions',
+                  '/expiry',
+                  '/reports',
+                  '/users',
+                  '/settings',
+                  '/audit'
+                ].includes(item.to)
+            )
+            .map((item) => (
+              <Route key={item.to} path={item.to} element={<ComingSoon title={item.label} />} />
+            ))}
+          <Route path="/change-password" element={<ChangePasswordPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}

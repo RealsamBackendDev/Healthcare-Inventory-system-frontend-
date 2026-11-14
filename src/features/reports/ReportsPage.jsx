@@ -4,12 +4,7 @@ import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import ReportTable from './components/ReportTable.jsx';
-import {
-  downloadReport,
-  fileExtension,
-  getReportOptions,
-  runReport
-} from '../../services/reports.service.js';
+import { downloadReport, fileExtension, getReportOptions, runReport } from '../../services/reports.service.js';
 import { useAuth } from '../../hooks/useAuth.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
 import { formatDate, formatQuantity } from '../../utils/format.js';
@@ -107,6 +102,7 @@ const initialFilters = () => ({
 
 export default function ReportsPage() {
   const { hasPermission } = useAuth();
+  const canViewAudit = hasPermission(PERMISSIONS.AUDIT_VIEW);
 
   const available = useMemo(
     () => reportTypes.filter((type) => !type.permission || hasPermission(type.permission)),
@@ -238,13 +234,14 @@ export default function ReportsPage() {
     }
   };
 
-  const statusOptions = definition.requisitionStatus
-    ? (options?.requisitionStatuses || []).map((value) => ({ value, label: value }))
-    : definition.expiryStatus
-      ? (options?.expiryStatuses || []).map((value) => ({ value, label: value }))
-      : definition.reviewStatus
-        ? reviewStatuses.map((value) => ({ value, label: value }))
-        : [];
+  const statusOptions =
+    definition.requisitionStatus
+      ? (options?.requisitionStatuses || []).map((value) => ({ value, label: value }))
+      : definition.expiryStatus
+        ? (options?.expiryStatuses || []).map((value) => ({ value, label: value }))
+        : definition.reviewStatus
+          ? reviewStatuses.map((value) => ({ value, label: value }))
+          : [];
 
   const showFilters =
     definition.dates ||
@@ -495,7 +492,7 @@ export default function ReportsPage() {
               <h2 className="text-sm font-bold text-primary-900">{result.title}</h2>
               <p className="text-xs text-primary-500">
                 {formatQuantity(result.totalRows)} row
-                {Number(result.totalRows) === 1 ? '' : 's'} ¡¤ generated {formatDate(new Date())}
+                {Number(result.totalRows) === 1 ? '' : 's'} Â· generated {formatDate(new Date())}
               </p>
             </div>
             <p className="text-[11px] text-primary-400">

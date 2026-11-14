@@ -1,0 +1,92 @@
+import { useEffect, useState } from 'react';
+import { KeyRound } from 'lucide-react';
+import Alert from '../../../components/ui/Alert.jsx';
+import Button from '../../../components/ui/Button.jsx';
+import Drawer from '../../../components/ui/Drawer.jsx';
+import Input from '../../../components/ui/Input.jsx';
+import { resetUserPassword } from '../../../services/users.service.js';
+
+export default function PasswordResetDrawer({ open, onClose, user, onDone }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setNewPassword('');
+      setConfirmPassword('');
+      setError('');
+    }
+  }, [open]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (newPassword.length < 8) {
+      setError('The new password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('The two passwords do not match.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const result = await resetUserPassword(user.id, newPassword);
+      onDone(result.message || 'Password reset.');
+    } catch (submitError) {
+      setError(submitError.message || 'The password could not be reset.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={user ? `Reset password for ${user.fullName}` : 'Reset password'}
+      subtitle="All their existing sessions are signed out"
+    >
+      {user ? (
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          {error ? <Alert tone="error">{error}</Alert> : null}
+
+          <Input
+            label="New password"
+            name="resetNewPassword"
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            placeholder="At least 8 characters"
+          />
+          <Input
+            label="Confirm password"
+            name="resetConfirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            placeholder="Type it again"
+          />
+
+          <p className="text-xs text-primary-500">
+            They will be asked to choose their own password the next time they sign in.
+          </p>
+
+          <div className="flex flex-col gap-2 border-t border-sand-200 pt-4 sm:flex-row-reverse">
+            <Button type="submit" loading={saving} className="sm:flex-1">
+              <KeyRound className="h-4 w-4" aria-hidden="true" />
+              {saving ? 'Resetting' : 'Reset password'}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose} className="sm:flex-1">
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </Drawer>
+  );
+}

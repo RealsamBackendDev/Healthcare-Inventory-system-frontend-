@@ -1,0 +1,56 @@
+import { CheckCircle2 } from 'lucide-react';
+import { formatDate, formatQuantity } from '../../../utils/format.js';
+
+export default function DispenseResult({ result, onDismiss }) {
+  if (!result) {
+    return null;
+  }
+
+  return (
+    <div className="surface border-leaf-200 p-4 sm:p-5">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-leaf-50 text-primary-700">
+          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-primary-900">
+            Dispensed on {result.dispensing.reference}
+          </p>
+          <p className="text-xs text-primary-500">
+            {result.allocations.length} batch allocation
+            {result.allocations.length === 1 ? '' : 's'} · recorded by{' '}
+            {result.dispensing.createdByName}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-lg px-2 py-1 text-xs font-semibold text-primary-600 transition hover:bg-primary-50"
+        >
+          Dismiss
+        </button>
+      </div>
+
+      <ul className="mt-3 divide-y divide-sand-100 rounded-xl border border-sand-200">
+        {result.allocations.map((allocation) => (
+          <li
+            key={`${allocation.batchId}-${allocation.drugId}`}
+            className="flex items-center gap-3 px-3 py-2.5"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-primary-900">
+                {allocation.drugName}
+              </p>
+              <p className="text-xs text-primary-500">
+                Batch {allocation.batchNumber} · expiry {formatDate(allocation.expiryDate)}
+              </p>
+            </div>
+            <p className="shrink-0 text-sm font-bold text-primary-800">
+              -{formatQuantity(allocation.quantity)}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

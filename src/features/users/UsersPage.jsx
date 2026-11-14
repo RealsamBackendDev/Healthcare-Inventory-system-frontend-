@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  KeyRound,
-  Pencil,
-  RefreshCw,
-  Search,
-  UserPlus
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, KeyRound, Pencil, RefreshCw, Search, UserPlus } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
@@ -200,7 +192,7 @@ export default function UsersPage() {
                   </p>
                   <p className="truncate text-xs text-primary-500">{member.email}</p>
                   <p className="text-[11px] text-primary-400">
-                    {member.roleName} ¡¤{' '}
+                    {member.roleName} Â·{' '}
                     {member.lastLoginAt
                       ? `last signed in ${formatDateTime(member.lastLoginAt)}`
                       : 'never signed in'}
@@ -249,7 +241,7 @@ export default function UsersPage() {
         {pagination && pagination.total > 0 ? (
           <div className="flex items-center justify-between border-t border-sand-200 px-4 py-3 sm:px-5">
             <p className="text-xs text-primary-500">
-              Page {pagination.page} of {pagination.totalPages || 1} ¡¤{' '}
+              Page {pagination.page} of {pagination.totalPages || 1} Â·{' '}
               {formatQuantity(pagination.total)} people
             </p>
             <div className="flex items-center gap-2">
