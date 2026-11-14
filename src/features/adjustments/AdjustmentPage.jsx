@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ChevronLeft,
+    ChevronRight,
+      ClipboardCheck,
+        RefreshCw,
+          RotateCcw,
+            SlidersHorizontal
+            } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import StatusPill from './components/StatusPill.jsx';
@@ -51,6 +59,7 @@ const ReviewButtons = ({ onApprove, onReject }) => (
 );
 
 export default function AdjustmentsPage() {
+  const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const canCreateAdjustment = hasPermission(PERMISSIONS.ADJUSTMENTS_CREATE);
   const canApproveAdjustment = hasPermission(PERMISSIONS.ADJUSTMENTS_APPROVE);
@@ -155,23 +164,20 @@ export default function AdjustmentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={load} loading={loading}>
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-            Refresh
-          </Button>
-          {canCreate ? (
-            <Button
-              size="sm"
-              onClick={() => (tab === 'adjustments' ? setAdjustmentDrawer(true) : setReturnDrawer(true))}
-            >
-              {tab === 'adjustments' ? (
-                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              )}
-              {tab === 'adjustments' ? 'New adjustment' : 'New return'}
-            </Button>
-          ) : null}
+                    <Button variant="outline" size="sm" onClick={load} loading={loading}>
+                                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                              Refresh
+                                                        </Button>
+                                                                  {canCreateAdjustment ? (
+                                                                              <Button
+                                                                                            variant="outline"
+                                                                                                          size="sm"
+                                                                                                                        onClick={() => navigate('/adjustments/stock-count')}
+                                                                                                                                    >
+                                                                                                                                                  <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+                                                                                                                                                                Stock count
+                                                                                                                                                                            </Button>
+                                                                                                                                                                                      ) : null}
         </div>
       </header>
 
@@ -247,14 +253,14 @@ export default function AdjustmentsPage() {
                     </p>
                     <p className="truncate text-xs text-primary-500">
                       {isAdjustment
-                        ? `${titleCase(record.adjustmentType)} ¡¤ ${record.reason}`
-                        : `${record.itemCount} item${record.itemCount === 1 ? '' : 's'} ¡¤ ${
+                        ? `${titleCase(record.adjustmentType)} ï¿½ï¿½ ${record.reason}`
+                        : `${record.itemCount} item${record.itemCount === 1 ? '' : 's'} ï¿½ï¿½ ${
                             record.reason
                           }`}
                     </p>
                     <p className="text-[11px] text-primary-400">
-                      {record.requestedByName} ¡¤ {formatDateTime(record.createdAt)}
-                      {record.reviewedByName ? ` ¡¤ reviewed by ${record.reviewedByName}` : ''}
+                      {record.requestedByName} ï¿½ï¿½ {formatDateTime(record.createdAt)}
+                      {record.reviewedByName ? ` ï¿½ï¿½ reviewed by ${record.reviewedByName}` : ''}
                     </p>
                     {record.reviewComment ? (
                       <p className="mt-0.5 text-[11px] text-primary-500">
@@ -272,7 +278,7 @@ export default function AdjustmentsPage() {
                       />
                     ) : null}
                     {busyId === record.id ? (
-                      <p className="mt-1 text-[11px] font-medium text-primary-500">Working¡­</p>
+                      <p className="mt-1 text-[11px] font-medium text-primary-500">Workingï¿½ï¿½</p>
                     ) : null}
                   </div>
 
@@ -306,7 +312,7 @@ export default function AdjustmentsPage() {
         {pagination && pagination.total > 0 ? (
           <div className="flex items-center justify-between border-t border-sand-200 px-4 py-3 sm:px-5">
             <p className="text-xs text-primary-500">
-              Page {pagination.page} of {pagination.totalPages || 1} ¡¤{' '}
+              Page {pagination.page} of {pagination.totalPages || 1} ï¿½ï¿½{' '}
               {formatQuantity(pagination.total)} records
             </p>
             <div className="flex items-center gap-2">

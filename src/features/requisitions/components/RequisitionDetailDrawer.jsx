@@ -15,7 +15,8 @@ export default function RequisitionDetailDrawer({
   canApprove,
   canCreate,
   currentUserId,
-  onAction
+  onAction,
+  onEdit
 }) {
   const requisition = detail?.requisition;
   const items = detail?.items || [];
@@ -27,10 +28,10 @@ export default function RequisitionDetailDrawer({
   const canSubmit = status === 'draft' && (isOwner || canApprove);
   const canReview = status === 'pending_approval' && canApprove && !isOwner;
   const selfReviewBlocked = status === 'pending_approval' && canApprove && isOwner;
-  const canCancel = canCreate && ['draft', 'pending_approval'].includes(status) && (isOwner || canApprove);
+  const canCancel =
+    canCreate && ['draft', 'pending_approval'].includes(status) && (isOwner || canApprove);
   const canClose = status === 'approved' && canApprove;
-  const canAmend =
-    canCreate && ['pending_approval', 'approved', 'rejected'].includes(status);
+  const canAmend = canCreate && ['approved', 'rejected'].includes(status);
 
   return (
     <Drawer
@@ -117,7 +118,9 @@ export default function RequisitionDetailDrawer({
 
           <div className="space-y-1 text-xs text-primary-500">
             <p>Created {formatDateTime(requisition.createdAt)}</p>
-            {requisition.submittedAt ? <p>Submitted {formatDateTime(requisition.submittedAt)}</p> : null}
+            {requisition.submittedAt ? (
+              <p>Submitted {formatDateTime(requisition.submittedAt)}</p>
+            ) : null}
             {requisition.reviewedAt ? (
               <p>
                 Reviewed by {requisition.reviewedByName} · {formatDateTime(requisition.reviewedAt)}
@@ -154,7 +157,12 @@ export default function RequisitionDetailDrawer({
 
           <div className="flex flex-wrap gap-2 border-t border-sand-200 pt-4">
             {canEditDraft ? (
-              <Button size="sm" variant="outline" onClick={() => onAction('edit')} disabled={busy}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => (onEdit ? onEdit() : onAction('edit'))}
+                disabled={busy}
+              >
                 <Pencil className="h-4 w-4" aria-hidden="true" />
                 Edit draft
               </Button>

@@ -391,12 +391,12 @@ export default function RequisitionsPage() {
                   </p>
                   <p className="truncate text-xs text-primary-500">
                     {formatQuantity(record.itemCount)} item
-                    {Number(record.itemCount) === 1 ? '' : 's'} ¡¤{' '}
-                    {formatQuantity(record.totalQuantity)} units ¡¤{' '}
+                    {Number(record.itemCount) === 1 ? '' : 's'} ï¿½ï¿½{' '}
+                    {formatQuantity(record.totalQuantity)} units ï¿½ï¿½{' '}
                     {titleCase(record.source)}
                   </p>
                   <p className="text-[11px] text-primary-400">
-                    {record.createdByName} ¡¤ {formatDateTime(record.createdAt)}
+                    {record.createdByName} ï¿½ï¿½ {formatDateTime(record.createdAt)}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
@@ -411,7 +411,7 @@ export default function RequisitionsPage() {
         {pagination && pagination.total > 0 ? (
           <div className="flex items-center justify-between border-t border-sand-200 px-4 py-3 sm:px-5">
             <p className="text-xs text-primary-500">
-              Page {pagination.page} of {pagination.totalPages || 1} ¡¤{' '}
+              Page {pagination.page} of {pagination.totalPages || 1} ï¿½ï¿½{' '}
               {formatQuantity(pagination.total)} records
             </p>
             <div className="flex items-center gap-2">
@@ -450,18 +450,20 @@ export default function RequisitionsPage() {
         requisition={editing?.requisition}
       />
 
-      <RequisitionDetailDrawer
-        open={Boolean(detailId)}
-        onClose={closeDetail}
-        detail={detail}
-        loading={detailLoading}
-        error={detailError}
-        busy={busy}
-        canApprove={canApprove}
-        canCreate={canCreate}
-        currentUserId={user?.id}
-        onAction={handleDetailAction}
-      />
-    </div>
-  );
-}
+            <RequisitionDetailDrawer
+                    open={Boolean(detailId)}
+                            onClose={closeDetail}
+                                    detail={detail}
+                                            loading={detailLoading}
+                                                    error={detailError}
+                                                            busy={busy}
+                                                                    canApprove={canApprove}
+                                                                            canCreate={canCreate}
+                                                                                    currentUserId={user?.id}
+                                                                                            onAction={handleDetailAction}
+                                                                                                    onEdit={() => {
+                                                                                                              setEditing(detail);
+                                                                                                                        closeDetail();
+                                                                                                                                  setFormOpen(true);
+                                                                                                                                          }}
+                                                                                                                                                />

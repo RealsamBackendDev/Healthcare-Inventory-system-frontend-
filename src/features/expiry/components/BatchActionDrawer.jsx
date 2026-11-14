@@ -122,6 +122,10 @@ export default function BatchActionDrawer({ open, onClose, batch, onDone }) {
               {batch.unitOfMeasure}
             </p>
             <p className="mt-0.5">Expires {formatDate(batch.expiryDate)}</p>
+            <p className="mt-1.5 text-[11px] text-primary-500">
+              Dispensing always takes the earliest-expiring usable batch first, so stock leaves in
+              this order without anyone choosing.
+            </p>
           </div>
 
           <div>

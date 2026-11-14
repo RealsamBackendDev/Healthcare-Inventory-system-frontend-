@@ -5,13 +5,13 @@ import { useAuth } from '../hooks/useAuth.js';
 export default function PublicRoute({ children }) {
   const { status, isLoading } = useAuth();
 
-  if (isLoading || status === 'loading') {
-    return <LoadingScreen message="Checking your session" />;
-  }
+    if (isLoading || status === 'loading') {
+        return <LoadingScreen message="Checking your session" />;
+          }
 
-  if (status === 'authenticated') {
-    return <Navigate to="/dashboard" replace />;
-  }
+            if (status === 'authenticated') {
+                return <Navigate to="/dashboard" replace />;
+                  }
 
-  return children;
-}
+                    return children;
+                    }
