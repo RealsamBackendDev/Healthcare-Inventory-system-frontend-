@@ -66,4 +66,3 @@ export const formatCurrency = (value) => {
                                                                                                                                                   .map((part) => part.charAt(0).toUpperCase())
                                                                                                                                                       .join('');
                                                                                                                                                       };
-}

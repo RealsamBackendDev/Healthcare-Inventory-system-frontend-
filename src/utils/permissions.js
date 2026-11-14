@@ -23,4 +23,3 @@ export const PERMISSIONS = {
                                           ADMINISTRATOR: 'ADMINISTRATOR',
                                             STAFF: 'STAFF'
                                             };
-}

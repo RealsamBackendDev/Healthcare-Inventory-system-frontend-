@@ -8,4 +8,3 @@ export default function Card({ as: Tag = 'div', className = '', padded = true, c
                                     </Tag>
                                       );
                                       }
-}
