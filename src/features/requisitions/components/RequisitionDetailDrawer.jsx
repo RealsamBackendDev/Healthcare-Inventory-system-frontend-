@@ -28,8 +28,7 @@ export default function RequisitionDetailDrawer({
   const canSubmit = status === 'draft' && (isOwner || canApprove);
   const canReview = status === 'pending_approval' && canApprove && !isOwner;
   const selfReviewBlocked = status === 'pending_approval' && canApprove && isOwner;
-  const canCancel =
-    canCreate && ['draft', 'pending_approval'].includes(status) && (isOwner || canApprove);
+  const canCancel = canCreate && ['draft', 'pending_approval'].includes(status) && (isOwner || canApprove);
   const canClose = status === 'approved' && canApprove;
   const canAmend = canCreate && ['approved', 'rejected'].includes(status);
 
@@ -118,9 +117,7 @@ export default function RequisitionDetailDrawer({
 
           <div className="space-y-1 text-xs text-primary-500">
             <p>Created {formatDateTime(requisition.createdAt)}</p>
-            {requisition.submittedAt ? (
-              <p>Submitted {formatDateTime(requisition.submittedAt)}</p>
-            ) : null}
+            {requisition.submittedAt ? <p>Submitted {formatDateTime(requisition.submittedAt)}</p> : null}
             {requisition.reviewedAt ? (
               <p>
                 Reviewed by {requisition.reviewedByName} · {formatDateTime(requisition.reviewedAt)}

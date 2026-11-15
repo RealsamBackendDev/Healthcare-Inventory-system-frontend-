@@ -1,68 +1,68 @@
 export default {
-      content: ['./index.html', './src/**/*.{js,jsx}'],
-        theme: {
-            extend: {
-                  colors: {
-                          primary: {
-                                    50: '#EEF7F1',
-                                              100: '#D7EBDE',
-                                                        200: '#AFD8BC',
-                                                                  300: '#7FC196',
-                                                                            400: '#4CA64C',
-                                                                                      500: '#2F8B4F',
-                                                                                                600: '#1B6B38',
-                                                                                                          700: '#006837',
-                                                                                                                    800: '#0C4A27',
-                                                                                                                              900: '#07331B'
-                                                                                                                                      },
-                                                                                                                                              leaf: {
-                                                                                                                                                        50: '#F1F9EF',
-                                                                                                                                                                  100: '#DEF1D9',
-                                                                                                                                                                            200: '#BEE3B4',
-                                                                                                                                                                                      300: '#97CF88',
-                                                                                                                                                                                                400: '#5ABA4A',
-                                                                                                                                                                                                          500: '#4CA64C',
-                                                                                                                                                                                                                    600: '#3D8A3D',
-                                                                                                                                                                                                                              700: '#2F6C2F'
-                                                                                                                                                                                                                                      },
-                                                                                                                                                                                                                                              maroon: {
-                                                                                                                                                                                                                                                        50: '#FCEBED',
-                                                                                                                                                                                                                                                                  100: '#F7D2D6',
-                                                                                                                                                                                                                                                                            200: '#EFA5AD',
-                                                                                                                                                                                                                                                                                      300: '#E0707E',
-                                                                                                                                                                                                                                                                                                400: '#C8102E',
-                                                                                                                                                                                                                                                                                                          500: '#A61326',
-                                                                                                                                                                                                                                                                                                                    600: '#8B1E24',
-                                                                                                                                                                                                                                                                                                                              700: '#74181D'
-                                                                                                                                                                                                                                                                                                                                      },
-                                                                                                                                                                                                                                                                                                                                              sand: {
-                                                                                                                                                                                                                                                                                                                                                        50: '#FAFAF8',
-                                                                                                                                                                                                                                                                                                                                                                  100: '#F4F5F1',
-                                                                                                                                                                                                                                                                                                                                                                            200: '#E7E9E2',
-                                                                                                                                                                                                                                                                                                                                                                                      300: '#D4D8CE'
-                                                                                                                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                                                                                                                                    },
-                                                                                                                                                                                                                                                                                                                                                                                                          fontFamily: {
-                                                                                                                                                                                                                                                                                                                                                                                                                  sans: [
-                                                                                                                                                                                                                                                                                                                                                                                                                            'ui-sans-serif',
-                                                                                                                                                                                                                                                                                                                                                                                                                                      'system-ui',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                '-apple-system',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                          'Segoe UI',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                    'Roboto',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              'Helvetica Neue',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        'Arial',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  'sans-serif'
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ]
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                },
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      boxShadow: {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              card: '0 1px 2px rgba(7, 51, 27, 0.06), 0 8px 24px -16px rgba(7, 51, 27, 0.28)',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      lift: '0 18px 40px -24px rgba(7, 51, 27, 0.45)'
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            },
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  borderRadius: {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          xl: '0.875rem',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  '2xl': '1.125rem'
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              },
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                plugins: []
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                };
+  content: ['./index.html', './src/**/*.{js,jsx}'],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#EEF7F1',
+          100: '#D7EBDE',
+          200: '#AFD8BC',
+          300: '#7FC196',
+          400: '#4CA64C',
+          500: '#2F8B4F',
+          600: '#1B6B38',
+          700: '#006837',
+          800: '#0C4A27',
+          900: '#07331B'
+        },
+        leaf: {
+          50: '#F1F9EF',
+          100: '#DEF1D9',
+          200: '#BEE3B4',
+          300: '#97CF88',
+          400: '#5ABA4A',
+          500: '#4CA64C',
+          600: '#3D8A3D',
+          700: '#2F6C2F'
+        },
+        maroon: {
+          50: '#FCEBED',
+          100: '#F7D2D6',
+          200: '#EFA5AD',
+          300: '#E0707E',
+          400: '#C8102E',
+          500: '#A61326',
+          600: '#8B1E24',
+          700: '#74181D'
+        },
+        sand: {
+          50: '#FAFAF8',
+          100: '#F4F5F1',
+          200: '#E7E9E2',
+          300: '#D4D8CE'
+        }
+      },
+      fontFamily: {
+        sans: [
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif'
+        ]
+      },
+      boxShadow: {
+        card: '0 1px 2px rgba(7, 51, 27, 0.06), 0 8px 24px -16px rgba(7, 51, 27, 0.28)',
+        lift: '0 18px 40px -24px rgba(7, 51, 27, 0.45)'
+      },
+      borderRadius: {
+        xl: '0.875rem',
+        '2xl': '1.125rem'
+      }
+    }
+  },
+  plugins: []
+};
