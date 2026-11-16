@@ -27,6 +27,7 @@ import LgConsolidationsPage from '../features/lg/LgConsolidationsPage.jsx';
 import LgOrdersPage from '../features/lg/LgOrdersPage.jsx';
 import LgTransfersPage from '../features/lg/LgTransfersPage.jsx';
 import TransfersPage from '../features/transfers/TransfersPage.jsx';
+import TransferRequestsPage from '../features/transfers/TransferRequestsPage.jsx';
 import DeliveriesPage from '../features/deliveries/DeliveriesPage.jsx';
 import ChangePasswordPage from '../features/auth/ChangePasswordPage.jsx';
 import ComingSoon from '../components/common/ComingSoon.jsx';
@@ -67,6 +68,7 @@ export default function AppRoutes() {
           <Route path="/requisitions" element={<RequisitionsPage />} />
           <Route path="/deliveries" element={<DeliveriesPage />} />
           <Route path="/transfers" element={<TransfersPage />} />
+          <Route path="/transfer-requests" element={<TransferRequestsPage />} />
           <Route path="/expiry" element={<ExpiryPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/users" element={<UsersPage />} />

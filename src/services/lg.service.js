@@ -106,6 +106,8 @@ export const approveApproval = (approvalId, comment) =>
 export const rejectApproval = (approvalId, reason) =>
   post(`/lg/approvals/${approvalId}/reject`, { reason });
 
+export const getAlerts = () => get('/lg/alerts');
+
 export const getReportsSummary = () => get('/lg/reports/summary');
 
 export const runLgReport = (type, params) => get(`/lg/reports/${type}${buildQuery(params)}`);

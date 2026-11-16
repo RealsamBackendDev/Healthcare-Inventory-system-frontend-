@@ -13,6 +13,7 @@ import {
   ScrollText,
   Truck,
   ArrowLeftRight,
+  Inbox,
   UserCircle
 } from 'lucide-react';
 import { PERMISSIONS } from './permissions.js';
@@ -79,6 +80,12 @@ export const navigationGroups = [
         label: 'Transfers',
         icon: ArrowLeftRight,
         permission: PERMISSIONS.DELIVERIES_RECEIVE
+      },
+      {
+        to: '/transfer-requests',
+        label: 'Transfer requests',
+        icon: Inbox,
+        permission: PERMISSIONS.REQUISITIONS_CREATE
       },
       {
         to: '/expiry',
