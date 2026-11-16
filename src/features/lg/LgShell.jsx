@@ -89,10 +89,11 @@ export default function LgShell({ children }) {
     navigate('/login', { replace: true });
   };
 
-  const current =
-    flatItems.find(
-      (item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
-    ) || flatItems[0];
+  const exactMatch = flatItems.find((item) => location.pathname === item.to);
+  const prefixMatch = flatItems
+    .filter((item) => location.pathname.startsWith(`${item.to}/`))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  const current = exactMatch || prefixMatch || flatItems[0];
 
   const alertCounts = alerts?.counts || null;
   const alertTotal = alertCounts

@@ -20,7 +20,10 @@ export default function ProtectedRoute() {
 
   const isLocalGovernment = Boolean(session?.activeLocalGovernment) && !session?.activeCentre;
   const localGovernmentPaths = ['/lg', '/change-password'];
-  if (isLocalGovernment && !localGovernmentPaths.includes(location.pathname)) {
+  const onLocalGovernmentPath = localGovernmentPaths.some(
+    (path) => location.pathname === path || location.pathname.startsWith(`${path}/`)
+  );
+  if (isLocalGovernment && !onLocalGovernmentPath) {
     return <Navigate to="/lg" replace />;
   }
 
