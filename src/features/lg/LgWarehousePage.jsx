@@ -102,11 +102,7 @@ export default function LgWarehousePage() {
         notes: notes || null,
         items
       });
-      setNotice(
-        result.requiresApproval
-          ? `Sent for a second officer to approve (${formatQuantity(result.approval.quantity)} units).`
-          : `Stock received as ${result.receiptNumber}.`
-      );
+      setNotice(`Stock received as ${result.receiptNumber}.`);
       resetForm();
       setShowForm(false);
       await load();
@@ -234,8 +230,7 @@ export default function LgWarehousePage() {
               Add batch
             </Button>
             <p className="text-xs text-primary-500">
-              Above {formatQuantity(data?.thresholds?.receiptQuantity || 0)} units or ₦
-              {Number(data?.thresholds?.receiptValue || 0).toLocaleString()} needs a second officer's approval.
+              Post each batch exactly as it appears on the supplier delivery note.
             </p>
           </div>
 
@@ -247,18 +242,6 @@ export default function LgWarehousePage() {
               placeholder="Optional note for the receipt"
             />
           </div>
-
-          {thresholdNeeded ? (
-            <label className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={thresholdApproved}
-                onChange={(event) => setThresholdApproved(event.target.checked)}
-              />
-              <span>I confirm this receipt is above the configured threshold and should be posted.</span>
-            </label>
-          ) : null}
 
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => { resetForm(); setShowForm(false); }}>

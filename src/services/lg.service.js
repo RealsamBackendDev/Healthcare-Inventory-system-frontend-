@@ -25,8 +25,11 @@ export const listRequests = (params) => get(`/lg/requisitions${buildQuery(params
 
 export const getRequest = (requisitionId) => get(`/lg/requisitions/${requisitionId}`);
 
-export const approveRequest = (requisitionId, comment) =>
-  post(`/lg/requisitions/${requisitionId}/approve`, { comment: comment || null });
+export const approveRequest = (requisitionId, comment, items) =>
+  post(`/lg/requisitions/${requisitionId}/approve`, {
+    comment: comment || null,
+    items: items && items.length > 0 ? items : undefined
+  });
 
 export const rejectRequest = (requisitionId, reason) =>
   post(`/lg/requisitions/${requisitionId}/reject`, { reason });
@@ -38,10 +41,10 @@ export const listDispatches = () => get('/lg/dispatches');
 
 export const listIncomingDeliveries = () => get('/deliveries/incoming');
 
-export const getDelivery = (requisitionId) => get(`/requisitions/${requisitionId}/delivery`);
+export const getDispatchDelivery = (dispatchId) => get(`/deliveries/${dispatchId}`);
 
-export const receiveDelivery = (requisitionId, note) =>
-  post(`/requisitions/${requisitionId}/delivery/receive`, { note: note || null });
+export const receiveDispatchDelivery = (dispatchId, payload) =>
+  post(`/deliveries/${dispatchId}/receive`, payload);
 
 export const listTransferFacilities = () => get('/lg/transfers/facilities');
 
@@ -97,14 +100,6 @@ export const finalizeConsolidation = (consolidationId) =>
 
 export const cancelConsolidation = (consolidationId) =>
   post(`/lg/consolidations/${consolidationId}/cancel`, {});
-
-export const listApprovals = (params) => get(`/lg/approvals${buildQuery(params)}`);
-
-export const approveApproval = (approvalId, comment) =>
-  post(`/lg/approvals/${approvalId}/approve`, { comment: comment || null });
-
-export const rejectApproval = (approvalId, reason) =>
-  post(`/lg/approvals/${approvalId}/reject`, { reason });
 
 export const getAlerts = () => get('/lg/alerts');
 

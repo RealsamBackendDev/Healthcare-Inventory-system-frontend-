@@ -31,6 +31,15 @@ export default function RequisitionDetailDrawer({
   const canCancel = canCreate && ['draft', 'pending_approval'].includes(status) && (isOwner || canApprove);
   const canClose = status === 'approved' && canApprove;
   const canAmend = canCreate && ['approved', 'rejected'].includes(status);
+  const showBalances = ['approved', 'closed'].includes(status);
+  const totals = items.reduce(
+    (accumulator, item) => ({
+      approved: accumulator.approved + Number(item.approvedQuantity || 0),
+      outstanding: accumulator.outstanding + Number(item.outstandingQuantity || 0),
+      inTransit: accumulator.inTransit + Number(item.inTransitQuantity || 0)
+    }),
+    { approved: 0, outstanding: 0, inTransit: 0 }
+  );
 
   return (
     <Drawer
@@ -64,6 +73,12 @@ export default function RequisitionDetailDrawer({
                 {items.length} item{items.length === 1 ? '' : 's'} ·{' '}
                 {formatQuantity(requisition.totalQuantity)} units
               </p>
+              {showBalances ? (
+                <p className="mt-1 text-[11px] text-primary-600">
+                  Approved {formatQuantity(totals.approved)} · Owing{' '}
+                  {formatQuantity(totals.outstanding)} · In transit {formatQuantity(totals.inTransit)}
+                </p>
+              ) : null}
             </div>
             <RequisitionStatusPill status={requisition.status} />
           </div>
@@ -104,6 +119,40 @@ export default function RequisitionDetailDrawer({
                         <span className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                           Suggested
                         </span>
+                      ) : null}
+                      {showBalances ? (
+                        <div className="mt-1.5 grid grid-cols-3 gap-2 rounded-lg bg-sand-50 px-2 py-1.5 text-[11px]">
+                          <div>
+                            <span className="block text-primary-500">Approved</span>
+                            <span className="font-semibold text-primary-800">
+                              {formatQuantity(item.approvedQuantity)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-primary-500">Owing</span>
+                            <span
+                              className={
+                                Number(item.outstandingQuantity) > 0
+                                  ? 'font-semibold text-maroon-600'
+                                  : 'font-semibold text-primary-800'
+                              }
+                            >
+                              {formatQuantity(item.outstandingQuantity)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-primary-500">In transit</span>
+                            <span
+                              className={
+                                Number(item.inTransitQuantity) > 0
+                                  ? 'font-semibold text-leaf-700'
+                                  : 'font-semibold text-primary-800'
+                              }
+                            >
+                              {formatQuantity(item.inTransitQuantity)}
+                            </span>
+                          </div>
+                        </div>
                       ) : null}
                     </div>
                     <p className="shrink-0 text-sm font-bold text-primary-900">

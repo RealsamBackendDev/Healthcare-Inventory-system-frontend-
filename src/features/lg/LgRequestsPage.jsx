@@ -16,6 +16,11 @@ const tabs = [
   { value: 'closed', label: 'Completed' }
 ];
 
+const toNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export default function LgRequestsPage() {
   const { hasPermission } = useAuth();
   const canReview = hasPermission(PERMISSIONS.REQUISITIONS_LG_REVIEW);
@@ -33,6 +38,7 @@ export default function LgRequestsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+  const [approved, setApproved] = useState({});
   const [quantities, setQuantities] = useState({});
   const [dispatchNotes, setDispatchNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,12 +66,18 @@ export default function LgRequestsPage() {
     try {
       const result = await lgService.getRequest(requisitionId);
       setDetail(result);
+      const nextApproved = {};
       const nextQuantities = {};
       (result.items || []).forEach((item) => {
-        nextQuantities[item.drugId] = String(Math.min(item.requestedQuantity, item.warehouseQuantity));
+        nextApproved[item.drugId] = String(item.approvedQuantity ?? item.requestedQuantity);
+        nextQuantities[item.drugId] = String(
+          Math.min(item.outstandingQuantity ?? 0, item.warehouseQuantity ?? 0)
+        );
       });
+      setApproved(nextApproved);
       setQuantities(nextQuantities);
       setDispatchNotes('');
+      setDispatching(false);
       setShowReject(false);
       setRejectReason('');
     } catch (loadError) {
@@ -88,12 +100,33 @@ export default function LgRequestsPage() {
   };
 
   const handleApprove = async () => {
-    setBusy(true);
     setError('');
     setNotice('');
+    const items = (detail?.items || []).map((item) => ({
+      drugId: item.drugId,
+      approvedQuantity: toNumber(approved[item.drugId])
+    }));
+    const over = items.find((entry, index) => {
+      const requested = detail.items[index].requestedQuantity;
+      return entry.approvedQuantity < 0 || entry.approvedQuantity > requested + 0.0005;
+    });
+    if (over) {
+      setError('An approved quantity cannot be more than what the facility asked for.');
+      return;
+    }
+    if (items.reduce((total, entry) => total + entry.approvedQuantity, 0) <= 0) {
+      setError('Approve at least one unit, or reject the request instead.');
+      return;
+    }
+
+    setBusy(true);
     try {
-      await lgService.approveRequest(selectedId, 'Approved by the local government');
-      setNotice('Requisition approved. You can dispatch it from the warehouse.');
+      await lgService.approveRequest(
+        selectedId,
+        'Approved by the local government',
+        items
+      );
+      setNotice('Requisition approved. Only the approved quantities can be dispatched.');
       await refreshAfterAction();
     } catch (actionError) {
       setError(actionError.message || 'The requisition could not be approved.');
@@ -118,22 +151,23 @@ export default function LgRequestsPage() {
   };
 
   const handleDispatch = async () => {
+    const items = Object.entries(quantities)
+      .map(([drugId, value]) => ({ drugId, quantity: toNumber(value) }))
+      .filter((item) => item.quantity > 0);
+    if (items.length === 0) {
+      setError('Enter the quantity to dispatch for at least one drug.');
+      return;
+    }
+
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      const items = Object.entries(quantities)
-        .map(([drugId, value]) => ({ drugId, quantity: Number(value) }))
-        .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
       const result = await lgService.dispatchRequest(selectedId, {
         notes: dispatchNotes || null,
-        items: items.length > 0 ? items : undefined
+        items
       });
-      setNotice(
-        result.requiresApproval
-          ? 'Dispatch sent for a second officer to approve.'
-          : `Dispatch ${result.dispatchNumber} posted to ${result.centreName}.`
-      );
+      setNotice(`Dispatch ${result.dispatchNumber} posted to ${result.centreName}.`);
       setDispatching(false);
       await refreshAfterAction();
     } catch (actionError) {
@@ -142,6 +176,14 @@ export default function LgRequestsPage() {
       setBusy(false);
     }
   };
+
+  const outstandingTotal = (detail?.items || []).reduce(
+    (total, item) => total + toNumber(item.outstandingQuantity),
+    0
+  );
+  const pendingDispatchItems = (detail?.items || []).filter(
+    (item) => toNumber(item.outstandingQuantity) > 0
+  );
 
   return (
     <LgShell>
@@ -236,8 +278,9 @@ export default function LgRequestsPage() {
                 <thead className="text-left text-[11px] uppercase tracking-wide text-primary-400">
                   <tr>
                     <th className="py-2">Drug</th>
-                    <th className="py-2 text-right">Requested</th>
-                    <th className="py-2 text-right">In warehouse</th>
+                    <th className="py-2 text-right">Asked</th>
+                    <th className="py-2 text-right">Approved</th>
+                    <th className="py-2 text-right">Owing</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-sand-100">
@@ -245,19 +288,25 @@ export default function LgRequestsPage() {
                     <tr key={item.id}>
                       <td className="py-2">
                         <p className="font-medium text-primary-800">{item.drugName}</p>
-                        <p className="text-[11px] text-primary-400">{item.drugCode}</p>
+                        <p className="text-[11px] text-primary-400">
+                          {item.drugCode}
+                          {toNumber(item.inTransitQuantity) > 0
+                            ? ` · ${formatQuantity(item.inTransitQuantity)} on the road`
+                            : ''}
+                        </p>
                       </td>
                       <td className="py-2 text-right text-primary-700">
                         {formatQuantity(item.requestedQuantity)}
                       </td>
+                      <td className="py-2 text-right font-semibold text-primary-800">
+                        {formatQuantity(item.approvedQuantity)}
+                      </td>
                       <td
                         className={`py-2 text-right font-semibold ${
-                          item.warehouseQuantity >= item.requestedQuantity
-                            ? 'text-primary-700'
-                            : 'text-maroon-600'
+                          toNumber(item.outstandingQuantity) > 0 ? 'text-maroon-600' : 'text-primary-500'
                         }`}
                       >
-                        {formatQuantity(item.warehouseQuantity)}
+                        {formatQuantity(item.outstandingQuantity)}
                       </td>
                     </tr>
                   ))}
@@ -266,12 +315,50 @@ export default function LgRequestsPage() {
 
               {detail.dispatch ? (
                 <Alert tone="info" className="mt-3">
-                  Dispatched as {detail.dispatch.dispatchNumber} on {formatDate(detail.dispatch.dispatchedAt)}.
+                  Last dispatch {detail.dispatch.dispatchNumber} on{' '}
+                  {formatDate(detail.dispatch.dispatchedAt)} · {titleCase(detail.dispatch.status)}
+                  {detail.dispatch.missingQuantity > 0
+                    ? ` · ${formatQuantity(detail.dispatch.missingQuantity)} missing at the facility`
+                    : ''}
+                  {detail.dispatch.damagedQuantity > 0
+                    ? ` · ${formatQuantity(detail.dispatch.damagedQuantity)} damaged`
+                    : ''}
                 </Alert>
               ) : null}
 
               {canReview && detail.requisition.status === 'pending_approval' ? (
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-xl border border-sand-200 p-3">
+                    <h3 className="text-sm font-semibold text-primary-800">Quantities to approve</h3>
+                    <p className="text-[11px] text-primary-400">
+                      Lower a quantity where the warehouse cannot cover the full request.
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {detail.items.map((item) => (
+                        <div key={item.id} className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-primary-800">{item.drugName}</p>
+                            <p className="text-[11px] text-primary-400">
+                              Asked {formatQuantity(item.requestedQuantity)} · warehouse{' '}
+                              {formatQuantity(item.warehouseQuantity)}
+                            </p>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            max={item.requestedQuantity}
+                            step="any"
+                            value={approved[item.drugId] ?? ''}
+                            onChange={(event) =>
+                              setApproved((current) => ({ ...current, [item.drugId]: event.target.value }))
+                            }
+                            className="field w-20"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={handleApprove} loading={busy}>
                       <Check className="h-4 w-4" aria-hidden="true" />
@@ -305,29 +392,36 @@ export default function LgRequestsPage() {
                 </div>
               ) : null}
 
-              {canDispatch && detail.requisition.status === 'approved' && !detail.dispatch ? (
+              {canDispatch && detail.requisition.status === 'approved' && outstandingTotal > 0 ? (
                 <div className="mt-4">
                   {dispatching ? (
                     <div className="space-y-3 rounded-xl border border-sand-200 p-3">
                       <h3 className="text-sm font-semibold text-primary-800">Quantities to dispatch</h3>
-                      {detail.items.map((item) => (
+                      <p className="text-[11px] text-primary-400">
+                        {formatQuantity(outstandingTotal)} unit(s) still owed on this request.
+                      </p>
+                      {pendingDispatchItems.map((item) => (
                         <div key={item.id} className="flex items-center gap-3">
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm text-primary-800">{item.drugName}</p>
                             <p className="text-[11px] text-primary-400">
-                              Requested {formatQuantity(item.requestedQuantity)} · warehouse{' '}
+                              Owing {formatQuantity(item.outstandingQuantity)} · warehouse{' '}
                               {formatQuantity(item.warehouseQuantity)}
+                              {toNumber(item.inTransitQuantity) > 0
+                                ? ` · ${formatQuantity(item.inTransitQuantity)} already on the road`
+                                : ''}
                             </p>
                           </div>
                           <input
                             type="number"
                             min="0"
-                            max={Math.min(item.requestedQuantity, item.warehouseQuantity)}
+                            max={item.outstandingQuantity}
+                            step="any"
                             value={quantities[item.drugId] ?? ''}
                             onChange={(event) =>
                               setQuantities((current) => ({ ...current, [item.drugId]: event.target.value }))
                             }
-                            className="field w-24"
+                            className="field w-20"
                           />
                         </div>
                       ))}
@@ -337,17 +431,6 @@ export default function LgRequestsPage() {
                         onChange={(event) => setDispatchNotes(event.target.value)}
                         placeholder="Vehicle, driver or handover note"
                       />
-                      {thresholdNeeded ? (
-                        <label className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                          <input
-                            type="checkbox"
-                            className="mt-1"
-                            checked={thresholdApproved}
-                            onChange={(event) => setThresholdApproved(event.target.checked)}
-                          />
-                          <span>I confirm this dispatch is above the configured threshold.</span>
-                        </label>
-                      ) : null}
                       <div className="flex justify-end gap-2">
                         <Button variant="outline" size="sm" onClick={() => setDispatching(false)}>
                           Cancel
@@ -361,7 +444,7 @@ export default function LgRequestsPage() {
                   ) : (
                     <Button size="sm" onClick={() => setDispatching(true)}>
                       <Truck className="h-4 w-4" aria-hidden="true" />
-                      Prepare dispatch
+                      {detail.dispatch ? 'Send the outstanding balance' : 'Prepare dispatch'}
                     </Button>
                   )}
                 </div>

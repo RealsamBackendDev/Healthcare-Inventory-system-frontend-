@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, RefreshCw, Truck } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -6,6 +6,20 @@ import Input from '../../components/ui/Input.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import * as lgService from '../../services/lg.service.js';
 import { formatDate, formatDateTime, formatQuantity } from '../../utils/format.js';
+
+const toNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isBalanced = (difference) => Math.abs(difference) < 0.0005;
+
+const emptyLine = (quantity) => ({
+  accepted: String(quantity),
+  damaged: '0',
+  missing: '0',
+  reason: ''
+});
 
 export default function DeliveriesPage() {
   const { activeCentre } = useAuth();
@@ -16,6 +30,7 @@ export default function DeliveriesPage() {
 
   const [selectedId, setSelectedId] = useState(null);
   const [delivery, setDelivery] = useState(null);
+  const [lines, setLines] = useState({});
   const [detailLoading, setDetailLoading] = useState(false);
   const [note, setNote] = useState('');
   const [receiving, setReceiving] = useState(false);
@@ -37,13 +52,19 @@ export default function DeliveriesPage() {
     load();
   }, [load]);
 
-  const openDelivery = async (requisitionId) => {
-    setSelectedId(requisitionId);
+  const openDelivery = async (dispatchId) => {
+    setSelectedId(dispatchId);
     setDetailLoading(true);
     setError('');
+    setNotice('');
     try {
-      const result = await lgService.getDelivery(requisitionId);
+      const result = await lgService.getDispatchDelivery(dispatchId);
       setDelivery(result);
+      const nextLines = {};
+      (result.items || []).forEach((item) => {
+        nextLines[item.id] = emptyLine(item.quantity);
+      });
+      setLines(nextLines);
       setNote('');
     } catch (loadError) {
       setError(loadError.message || 'The delivery could not be loaded.');
@@ -52,16 +73,76 @@ export default function DeliveriesPage() {
     }
   };
 
+  const updateLine = (itemId, key, value) => {
+    setLines((current) => ({
+      ...current,
+      [itemId]: { ...(current[itemId] || {}), [key]: value }
+    }));
+  };
+
+  const summaries = useMemo(() => {
+    return (delivery?.items || []).map((item) => {
+      const line = lines[item.id] || emptyLine(item.quantity);
+      const accepted = toNumber(line.accepted);
+      const damaged = toNumber(line.damaged);
+      const missing = toNumber(line.missing);
+      const counted = accepted + damaged + missing;
+      const difference = Math.round((item.quantity - counted) * 1000) / 1000;
+      const hasDiscrepancy = damaged > 0 || missing > 0;
+      const reason = (line.reason || '').trim();
+      return {
+        item,
+        accepted,
+        damaged,
+        missing,
+        difference: Math.abs(difference) < 0.001 ? 0 : difference,
+        balanced: isBalanced(difference),
+        hasDiscrepancy,
+        reason,
+        reasonOk: !hasDiscrepancy || reason.length >= 3
+      };
+    });
+  }, [delivery, lines]);
+
+  const totals = summaries.reduce(
+    (sum, line) => ({
+      accepted: sum.accepted + line.accepted,
+      damaged: sum.damaged + line.damaged,
+      missing: sum.missing + line.missing
+    }),
+    { accepted: 0, damaged: 0, missing: 0 }
+  );
+
+  const canSubmit =
+    summaries.length > 0 && summaries.every((line) => line.balanced && line.reasonOk) && !receiving;
+
   const handleReceive = async () => {
     setReceiving(true);
     setError('');
     setNotice('');
     try {
-      const result = await lgService.receiveDelivery(selectedId, note || null);
+      const items = summaries.map((line) => ({
+        dispatchItemId: line.item.id,
+        acceptedQuantity: line.accepted,
+        damagedQuantity: line.damaged,
+        missingQuantity: line.missing,
+        reason: line.hasDiscrepancy ? line.reason : null
+      }));
+      const result = await lgService.receiveDispatchDelivery(selectedId, {
+        note: note || null,
+        items
+      });
       setNotice(
-        `Delivery confirmed. ${result.receivedItems.length} batch(es) added to ${activeCentre?.name || 'the store'}.`
+        `${result.dispatchNumber} confirmed: ${formatQuantity(result.acceptedQuantity)} accepted, ${formatQuantity(
+          result.damagedQuantity
+        )} damaged, ${formatQuantity(result.missingQuantity)} missing. ${
+          result.requisitionClosed
+            ? 'The requisition is now complete.'
+            : 'The shortfall stays outstanding so the warehouse can send it again.'
+        }`
       );
       setDelivery(null);
+      setLines({});
       setSelectedId(null);
       await load();
     } catch (actionError) {
@@ -69,6 +150,12 @@ export default function DeliveriesPage() {
     } finally {
       setReceiving(false);
     }
+  };
+
+  const closeDetail = () => {
+    setSelectedId(null);
+    setDelivery(null);
+    setLines({});
   };
 
   return (
@@ -95,9 +182,9 @@ export default function DeliveriesPage() {
             <li key={item.id}>
               <button
                 type="button"
-                onClick={() => openDelivery(item.requisitionId)}
+                onClick={() => openDelivery(item.id)}
                 className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition hover:bg-primary-50 ${
-                  selectedId === item.requisitionId ? 'bg-primary-50' : ''
+                  selectedId === item.id ? 'bg-primary-50' : ''
                 }`}
               >
                 <div>
@@ -106,7 +193,7 @@ export default function DeliveriesPage() {
                     {item.dispatchNumber}
                   </p>
                   <p className="text-xs text-primary-500">
-                    {item.itemCount} item(s) · {formatQuantity(item.totalQuantity)} units · dispatched by{' '}
+                    {item.itemCount} item(s) · {formatQuantity(item.totalQuantity)} units · sent by{' '}
                     {item.dispatchedByName}
                   </p>
                 </div>
@@ -128,61 +215,113 @@ export default function DeliveriesPage() {
             <p className="py-6 text-center text-xs text-primary-400">Loading delivery…</p>
           ) : (
             <>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold text-primary-900">{delivery.dispatchNumber}</p>
-                  <p className="text-xs text-primary-500">
-                    Dispatched {formatDateTime(delivery.dispatchedAt)} by {delivery.dispatchedByName}
-                  </p>
-                </div>
+              <div>
+                <p className="text-sm font-bold text-primary-900">{delivery.dispatchNumber}</p>
+                <p className="text-xs text-primary-500">
+                  Dispatched {formatDateTime(delivery.dispatchedAt)}
+                </p>
               </div>
 
-              <table className="mt-3 w-full text-sm">
-                <thead className="text-left text-[11px] uppercase tracking-wide text-primary-400">
-                  <tr>
-                    <th className="py-2">Drug</th>
-                    <th className="py-2">Batch</th>
-                    <th className="py-2">Expiry</th>
-                    <th className="py-2 text-right">Quantity</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-sand-100">
-                  {(delivery.items || []).map((item) => (
-                    <tr key={item.id}>
-                      <td className="py-2">
-                        <p className="font-medium text-primary-800">{item.drugName}</p>
-                        <p className="text-[11px] text-primary-400">{item.drugCode}</p>
-                      </td>
-                      <td className="py-2 text-primary-600">{item.batchNumber}</td>
-                      <td className="py-2 text-primary-600">{formatDate(item.expiryDate)}</td>
-                      <td className="py-2 text-right font-semibold text-primary-800">
-                        {formatQuantity(item.quantity)} {item.unitOfMeasure}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <p className="mt-3 rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-600">
+                Count every batch. Accepted, damaged and missing must add up to the quantity
+                dispatched; anything missing stays outstanding and can be sent again.
+              </p>
+
+              <ul className="mt-3 space-y-3">
+                {summaries.map((line) => (
+                  <li key={line.item.id} className="rounded-xl border border-sand-200 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-primary-800">
+                          {line.item.drugName}
+                        </p>
+                        <p className="text-[11px] text-primary-400">
+                          {line.item.batchNumber || 'No batch'} · exp {formatDate(line.item.expiryDate)}
+                        </p>
+                      </div>
+                      <p className="whitespace-nowrap text-sm font-bold text-primary-800">
+                        {formatQuantity(line.item.quantity)} {line.item.unitOfMeasure}
+                      </p>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <Input
+                        label="Accepted"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={lines[line.item.id]?.accepted ?? ''}
+                        onChange={(event) => updateLine(line.item.id, 'accepted', event.target.value)}
+                      />
+                      <Input
+                        label="Damaged"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={lines[line.item.id]?.damaged ?? ''}
+                        onChange={(event) => updateLine(line.item.id, 'damaged', event.target.value)}
+                      />
+                      <Input
+                        label="Missing"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={lines[line.item.id]?.missing ?? ''}
+                        onChange={(event) => updateLine(line.item.id, 'missing', event.target.value)}
+                      />
+                    </div>
+
+                    {line.difference !== 0 ? (
+                      <p className="mt-1.5 text-[11px] font-semibold text-maroon-600">
+                        {line.difference > 0
+                          ? `${formatQuantity(line.difference)} still to be accounted for`
+                          : `${formatQuantity(Math.abs(line.difference))} more than was dispatched`}
+                      </p>
+                    ) : null}
+
+                    {line.hasDiscrepancy ? (
+                      <div className="mt-2">
+                        <Input
+                          label="Reason for the difference"
+                          value={lines[line.item.id]?.reason ?? ''}
+                          onChange={(event) => updateLine(line.item.id, 'reason', event.target.value)}
+                          placeholder="e.g. two cartons crushed, one box short"
+                        />
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-sand-100 px-3 py-2 text-center">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-primary-400">Accepted</p>
+                  <p className="text-sm font-bold text-primary-800">{formatQuantity(totals.accepted)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-primary-400">Damaged</p>
+                  <p className="text-sm font-bold text-primary-800">{formatQuantity(totals.damaged)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-primary-400">Missing</p>
+                  <p className="text-sm font-bold text-primary-800">{formatQuantity(totals.missing)}</p>
+                </div>
+              </div>
 
               <div className="mt-3">
                 <Input
                   label="Receiving note"
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="Optional note, e.g. two cartons damaged"
+                  placeholder="Optional note for the record"
                 />
               </div>
 
               <div className="mt-3 flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedId(null);
-                    setDelivery(null);
-                  }}
-                >
+                <Button variant="outline" onClick={closeDetail}>
                   Close
                 </Button>
-                <Button onClick={handleReceive} loading={receiving}>
+                <Button onClick={handleReceive} loading={receiving} disabled={!canSubmit}>
                   <Check className="h-4 w-4" aria-hidden="true" />
                   Confirm delivery
                 </Button>

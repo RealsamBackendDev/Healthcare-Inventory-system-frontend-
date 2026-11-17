@@ -10,7 +10,6 @@ import {
   LogOut,
   Menu,
   RefreshCw,
-  ShieldCheck,
   ShoppingCart,
   Truck,
   Warehouse,
@@ -40,7 +39,6 @@ const groups = [
   {
     label: 'Control',
     items: [
-      { to: '/lg/approvals', label: 'Approvals', icon: ShieldCheck },
       { to: '/lg/reports', label: 'Reports', icon: BarChart3 }
     ]
   }
@@ -100,7 +98,6 @@ export default function LgShell({ children }) {
     ? alertCounts.lowStock +
       alertCounts.expiring +
       alertCounts.requisitions +
-      alertCounts.approvals +
       alertCounts.orders +
       alertCounts.consolidations
     : 0;
@@ -306,7 +303,7 @@ export default function LgShell({ children }) {
                   {alertCounts ? (
                     <div className="border-t border-sand-100 px-3 py-2 text-[11px] text-primary-400">
                       Low stock {alertCounts.lowStock} · Expiring {alertCounts.expiring} · Requests{' '}
-                      {alertCounts.requisitions} · Approvals {alertCounts.approvals}
+                      {alertCounts.requisitions}
                     </div>
                   ) : null}
                 </div>

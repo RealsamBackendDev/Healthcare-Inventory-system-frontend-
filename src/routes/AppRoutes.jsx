@@ -22,7 +22,6 @@ import LgWarehousePage from '../features/lg/LgWarehousePage.jsx';
 import LgRequestsPage from '../features/lg/LgRequestsPage.jsx';
 import LgDispatchesPage from '../features/lg/LgDispatchesPage.jsx';
 import LgReportsPage from '../features/lg/LgReportsPage.jsx';
-import LgApprovalsPage from '../features/lg/LgApprovalsPage.jsx';
 import LgConsolidationsPage from '../features/lg/LgConsolidationsPage.jsx';
 import LgOrdersPage from '../features/lg/LgOrdersPage.jsx';
 import LgTransfersPage from '../features/lg/LgTransfersPage.jsx';
@@ -52,7 +51,6 @@ export default function AppRoutes() {
         <Route path="/lg/requests" element={<LgRequestsPage />} />
         <Route path="/lg/dispatches" element={<LgDispatchesPage />} />
         <Route path="/lg/reports" element={<LgReportsPage />} />
-        <Route path="/lg/approvals" element={<LgApprovalsPage />} />
         <Route path="/lg/consolidations" element={<LgConsolidationsPage />} />
         <Route path="/lg/orders" element={<LgOrdersPage />} />
         <Route path="/lg/transfers" element={<LgTransfersPage />} />

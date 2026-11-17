@@ -73,11 +73,11 @@ export default function LgOverviewPage() {
           <p className="mt-1 text-xs text-primary-500">{warehouse?.code || 'Provisioned with the seed'}</p>
         </div>
         <div className="rounded-2xl border border-sand-200 bg-white p-4">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-primary-400">Approval thresholds</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-primary-400">LG settings</p>
           <p className="mt-2 text-sm font-semibold text-primary-800">
             {overview?.settings?.length || 0} configured
           </p>
-          <p className="mt-1 text-xs text-primary-500">Second Logistician above each limit</p>
+          <p className="mt-1 text-xs text-primary-500">Warehouse, expiry and review windows</p>
         </div>
       </div>
 
