@@ -10,6 +10,7 @@ import { formatDateTime, formatQuantity } from '../../utils/format.js';
 const statusLabels = {
   requested: 'Waiting for the source facility',
   in_transit: 'Approved, on the way',
+  partially_received: 'Part received',
   received: 'Received',
   declined: 'Declined',
   cancelled: 'Cancelled'
@@ -18,6 +19,7 @@ const statusLabels = {
 const statusStyles = {
   requested: 'bg-amber-50 text-amber-700 border-amber-200',
   in_transit: 'bg-leaf-50 text-primary-700 border-leaf-200',
+  partially_received: 'bg-amber-50 text-amber-700 border-amber-200',
   received: 'bg-primary-50 text-primary-700 border-primary-200',
   declined: 'bg-maroon-50 text-maroon-700 border-maroon-200',
   cancelled: 'bg-sand-100 text-primary-500 border-sand-200'
@@ -34,6 +36,10 @@ export default function TransferRequestsPage() {
   const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [reasons, setReasons] = useState({});
+  const [receiptDraft, setReceiptDraft] = useState(null);
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [shortageDraft, setShortageDraft] = useState(null);
+  const [shortageBusy, setShortageBusy] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [neighbours, setNeighbours] = useState([]);
@@ -178,18 +184,189 @@ export default function TransferRequestsPage() {
     }
   };
 
-  const receive = async (requestId) => {
+  const openReceive = async (requestId) => {
     setBusyId(requestId);
     setError('');
     setNotice('');
     try {
-      const result = await transfersService.receiveTransferRequest(requestId, null);
-      setNotice(`Received ${result.transferNumber}. Stock added to your store.`);
-      await load();
+      const detail = await transfersService.getTransferRequest(requestId);
+      const lines = (detail.batches || [])
+        .filter((line) => Number(line.pendingQuantity || 0) > 0)
+        .map((line) => ({
+          transferItemId: line.id,
+          name: line.name,
+          batchNumber: line.batchNumber,
+          unitOfMeasure: line.unitOfMeasure,
+          pending: Number(line.pendingQuantity || 0),
+          accepted: String(line.pendingQuantity || ''),
+          damaged: '',
+          missing: ''
+        }));
+      if (lines.length === 0) {
+        setError('Everything on this transfer has already been received.');
+        return;
+      }
+      setReceiptDraft({
+        requestId,
+        transferNumber: detail.transferNumber,
+        fromCentreName: detail.fromCentreName,
+        note: '',
+        lines
+      });
     } catch (actionError) {
-      setError(actionError.message || 'The stock could not be received.');
+      setError(actionError.message || 'This transfer could not be opened.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const updateReceiptLine = (transferItemId, key, value) => {
+    setReceiptDraft((current) =>
+      current
+        ? {
+            ...current,
+            lines: current.lines.map((line) =>
+              line.transferItemId === transferItemId ? { ...line, [key]: value } : line
+            )
+          }
+        : current
+    );
+  };
+
+  const openShortages = async (requestId) => {
+    setBusyId(requestId);
+    setError('');
+    setNotice('');
+    try {
+      const detail = await transfersService.getTransferRequest(requestId);
+      const lines = (detail.batches || [])
+        .filter(
+          (line) =>
+            line.discrepancyStatus === 'open' && Number(line.missingQuantity || 0) > 0
+        )
+        .map((line) => ({
+          lineId: line.id,
+          name: line.name,
+          batchNumber: line.batchNumber,
+          missing: Number(line.missingQuantity || 0),
+          resolution: 'reissue',
+          note: ''
+        }));
+      if (lines.length === 0) {
+        setError('There are no shortages waiting for a decision on this transfer.');
+        return;
+      }
+      setShortageDraft({
+        requestId,
+        transferNumber: detail.transferNumber,
+        fromCentreName: detail.fromCentreName,
+        lines
+      });
+    } catch (actionError) {
+      setError(actionError.message || 'This transfer could not be opened.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const updateShortageLine = (lineId, key, value) => {
+    setShortageDraft((current) =>
+      current
+        ? {
+            ...current,
+            lines: current.lines.map((line) =>
+              line.lineId === lineId ? { ...line, [key]: value } : line
+            )
+          }
+        : current
+    );
+  };
+
+  const submitShortage = async (line) => {
+    if (!shortageDraft) {
+      return;
+    }
+    const note = (line.note || '').trim();
+    if (note.length < 3) {
+      setError('Explain the decision in a few words.');
+      return;
+    }
+
+    setShortageBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await transfersService.resolveTransferShortage(
+        shortageDraft.requestId,
+        line.lineId,
+        line.resolution,
+        note
+      );
+      const outcome = result.resolution || {};
+      setNotice(
+        outcome.resolution === 'reissue'
+          ? `Replacement of ${formatQuantity(outcome.missingQuantity || 0)} ${line.name} requested as ${
+              outcome.replacementTransferNumber || 'a new transfer'
+            }.`
+          : `Wrote off ${formatQuantity(outcome.missingQuantity || 0)} ${line.name} on ${
+              shortageDraft.transferNumber
+            }.`
+      );
+      const remaining = shortageDraft.lines.filter((row) => row.lineId !== line.lineId);
+      setShortageDraft(remaining.length > 0 ? { ...shortageDraft, lines: remaining } : null);
+      await load();
+    } catch (actionError) {
+      setError(actionError.message || 'The decision could not be saved.');
+    } finally {
+      setShortageBusy(false);
+    }
+  };
+
+  const submitReceive = async () => {
+    if (!receiptDraft) {
+      return;
+    }
+    const items = receiptDraft.lines
+      .map((line) => ({
+        transferItemId: line.transferItemId,
+        acceptedQuantity: Number(line.accepted || 0),
+        damagedQuantity: Number(line.damaged || 0),
+        missingQuantity: Number(line.missing || 0)
+      }))
+      .filter((line) => line.acceptedQuantity + line.damagedQuantity + line.missingQuantity > 0);
+
+    if (items.length === 0) {
+      setError('Enter at least one quantity that arrived.');
+      return;
+    }
+
+    setReceiptBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await transfersService.receiveTransferRequest(
+        receiptDraft.requestId,
+        receiptDraft.note || null,
+        items
+      );
+      const summary = result.receipt || {};
+      setNotice(
+        summary.status === 'received'
+          ? `Received ${result.transferNumber}. Accepted ${formatQuantity(
+              summary.acceptedQuantity || 0
+            )}, damaged ${formatQuantity(summary.damagedQuantity || 0)}, missing ${formatQuantity(
+              summary.missingQuantity || 0
+            )}.`
+          : `Saved. ${formatQuantity(summary.remainingQuantity || 0)} still on the way for ${
+              result.transferNumber
+            }.`
+      );
+      setReceiptDraft(null);
+      await load();
+    } catch (actionError) {
+      setError(actionError.message || 'The receipt could not be saved.');
+    } finally {
+      setReceiptBusy(false);
     }
   };
 
@@ -271,13 +448,42 @@ export default function TransferRequestsPage() {
         </div>
       ) : null}
 
-      {mode === 'sent' && request.status === 'in_transit' ? (
-        <div className="mt-3">
-          <Button size="sm" onClick={() => receive(request.id)} loading={busyId === request.id}>
+      {mode === 'sent' &&
+      (request.status === 'in_transit' || request.status === 'partially_received') ? (
+        <div className="mt-3 space-y-2">
+          {request.status === 'partially_received' ? (
+            <p className="text-[11px] text-primary-400">
+              Part of this delivery is already in your store. Open the receipt to record the rest.
+            </p>
+          ) : null}
+          <Button size="sm" onClick={() => openReceive(request.id)} loading={busyId === request.id}>
             <Check className="h-4 w-4" aria-hidden="true" />
-            Confirm received
+            Receive stock
           </Button>
         </div>
+      ) : null}
+
+      {mode === 'sent' && request.openShortages > 0 ? (
+        <div className="mt-3 space-y-2">
+          <p className="text-[11px] text-amber-700">
+            {request.openShortages} line{request.openShortages === 1 ? '' : 's'} short and waiting for a
+            decision.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openShortages(request.id)}
+            loading={busyId === request.id}
+          >
+            Resolve shortage
+          </Button>
+        </div>
+      ) : null}
+
+      {request.status === 'received' && request.receivedAt ? (
+        <p className="mt-2 text-[11px] text-primary-400">
+          Confirmed by {request.receivedByName || 'the store'} · {formatDateTime(request.receivedAt)}
+        </p>
       ) : null}
 
       {mode === 'sent' && request.status === 'requested' ? (
@@ -404,6 +610,158 @@ export default function TransferRequestsPage() {
             </Button>
           </div>
         </form>
+      ) : null}
+
+      {receiptDraft ? (
+        <section className="space-y-3 rounded-2xl border border-sand-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-bold text-primary-900">
+                Receive {receiptDraft.transferNumber}
+              </p>
+              <p className="text-xs text-primary-500">
+                From {receiptDraft.fromCentreName}. Enter what actually arrived.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReceiptDraft(null)}
+              className="rounded-lg p-1 text-primary-400 transition hover:bg-primary-50"
+              aria-label="Close receipt form"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {receiptDraft.lines.map((line) => (
+            <div key={line.transferItemId} className="rounded-xl border border-sand-200 p-3">
+              <p className="text-sm font-semibold text-primary-800">{line.name}</p>
+              <p className="text-[11px] text-primary-400">
+                Batch {line.batchNumber} · {formatQuantity(line.pending)} {line.unitOfMeasure} still on
+                the way
+              </p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <Input
+                  label="Accepted"
+                  type="number"
+                  min="0"
+                  value={line.accepted}
+                  onChange={(event) =>
+                    updateReceiptLine(line.transferItemId, 'accepted', event.target.value)
+                  }
+                />
+                <Input
+                  label="Damaged"
+                  type="number"
+                  min="0"
+                  value={line.damaged}
+                  onChange={(event) =>
+                    updateReceiptLine(line.transferItemId, 'damaged', event.target.value)
+                  }
+                />
+                <Input
+                  label="Missing"
+                  type="number"
+                  min="0"
+                  value={line.missing}
+                  onChange={(event) =>
+                    updateReceiptLine(line.transferItemId, 'missing', event.target.value)
+                  }
+                />
+              </div>
+            </div>
+          ))}
+
+          <Input
+            label="Note"
+            value={receiptDraft.note}
+            onChange={(event) =>
+              setReceiptDraft((current) => (current ? { ...current, note: event.target.value } : current))
+            }
+            placeholder="Optional note about this delivery"
+          />
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReceiptDraft(null)}
+              disabled={receiptBusy}
+            >
+              Close
+            </Button>
+            <Button size="sm" onClick={submitReceive} loading={receiptBusy}>
+              <Check className="h-4 w-4" aria-hidden="true" />
+              Save receipt
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {shortageDraft ? (
+        <section className="space-y-3 rounded-2xl border border-sand-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-bold text-primary-900">
+                Shortage on {shortageDraft.transferNumber}
+              </p>
+              <p className="text-xs text-primary-500">
+                From {shortageDraft.fromCentreName}. Ask for a replacement or accept the loss.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShortageDraft(null)}
+              className="rounded-lg p-1 text-primary-400 transition hover:bg-primary-50"
+              aria-label="Close shortage form"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {shortageDraft.lines.map((line) => (
+            <div key={line.lineId} className="space-y-2 rounded-xl border border-sand-200 p-3">
+              <p className="text-sm font-semibold text-primary-800">{line.name}</p>
+              <p className="text-[11px] text-primary-400">
+                Batch {line.batchNumber} · {formatQuantity(line.missing)} missing
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={line.resolution === 'reissue' ? 'primary' : 'outline'}
+                  onClick={() => updateShortageLine(line.lineId, 'resolution', 'reissue')}
+                >
+                  Ask for replacement
+                </Button>
+                <Button
+                  size="sm"
+                  variant={line.resolution === 'written_off' ? 'primary' : 'outline'}
+                  onClick={() => updateShortageLine(line.lineId, 'resolution', 'written_off')}
+                >
+                  Write off
+                </Button>
+              </div>
+              <Input
+                label="Why"
+                value={line.note}
+                onChange={(event) =>
+                  updateShortageLine(line.lineId, 'note', event.target.value)
+                }
+                placeholder="Short reason for this decision"
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => submitShortage(line)}
+                  loading={shortageBusy}
+                >
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                  Save decision
+                </Button>
+              </div>
+            </div>
+          ))}
+        </section>
       ) : null}
 
       <div className="flex gap-1 rounded-xl border border-sand-200 bg-white p-1">

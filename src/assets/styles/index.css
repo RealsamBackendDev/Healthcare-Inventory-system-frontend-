@@ -33,3 +33,14 @@
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-primary-700;
   }
 }
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+}

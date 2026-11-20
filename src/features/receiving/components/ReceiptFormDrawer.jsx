@@ -30,6 +30,7 @@ export default function ReceiptFormDrawer({ open, onClose, onSaved }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [requestKey, setRequestKey] = useState('');
   const [loadingDrugs, setLoadingDrugs] = useState(false);
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export default function ReceiptFormDrawer({ open, onClose, onSaved }) {
     setHeader(defaultHeader);
     setItems([{ ...emptyItem }]);
     setFieldErrors({});
+    setRequestKey('');
     setError('');
 
     let active = true;
@@ -123,7 +125,11 @@ export default function ReceiptFormDrawer({ open, onClose, onSaved }) {
       return;
     }
 
+    const key = requestKey || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    setRequestKey(key);
+
     const payload = {
+      clientRequestId: key,
       supplier: header.supplier.trim() || null,
       receiptReference: header.receiptReference.trim() || null,
       receivedDate: header.receivedDate || null,
@@ -143,6 +149,7 @@ export default function ReceiptFormDrawer({ open, onClose, onSaved }) {
     setError('');
     try {
       const result = await createReceipt(payload);
+      setRequestKey('');
       onSaved(result);
     } catch (submitError) {
       setError(submitError.message || 'The receipt could not be saved.');

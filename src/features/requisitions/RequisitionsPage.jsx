@@ -9,7 +9,7 @@ import RequisitionFormDrawer from './components/RequisitionFormDrawer.jsx';
 import RequisitionDetailDrawer from './components/RequisitionDetailDrawer.jsx';
 import {
   amendRequisition,
-  approveRequisition,
+  suggestQuantities,
   cancelRequisition,
   closeRequisition,
   deleteRequisition,
@@ -160,7 +160,7 @@ export default function RequisitionsPage() {
     }
   };
 
-  const handleDetailAction = async (action) => {
+  const handleDetailAction = async (action, payload) => {
     const requisition = detail?.requisition;
     if (!requisition) {
       return;
@@ -194,10 +194,6 @@ export default function RequisitionsPage() {
       if (!window.confirm('Submit this requisition for approval? It can no longer be edited.')) {
         return;
       }
-    } else if (action === 'approve') {
-      if (!window.confirm('Approve this requisition?')) {
-        return;
-      }
     } else if (action === 'close') {
       if (!window.confirm('Close this requisition after handoff?')) {
         return;
@@ -225,8 +221,8 @@ export default function RequisitionsPage() {
       const result =
         action === 'submit'
           ? await submitRequisition(requisition.id)
-          : action === 'approve'
-            ? await approveRequisition(requisition.id)
+          : action === 'suggest'
+            ? await suggestQuantities(requisition.id, payload)
             : action === 'reject'
               ? await rejectRequisition(requisition.id, reason)
               : action === 'cancel'
@@ -240,7 +236,9 @@ export default function RequisitionsPage() {
       setNotice(
         action === 'amend'
           ? `Amendment draft ${result.requisition.requisitionNumber} created.`
-          : `${result.requisition.requisitionNumber} ${action === 'close' ? 'closed' : `${action}d`}.`
+          : action === 'suggest'
+            ? `Suggested quantities sent for ${result.requisition.requisitionNumber}.`
+            : `${result.requisition.requisitionNumber} ${action === 'close' ? 'closed' : `${action}d`}.`
       );
       refreshAll();
     } catch (actionError) {
@@ -395,6 +393,15 @@ export default function RequisitionsPage() {
                     {formatQuantity(record.totalQuantity)} units ·{' '}
                     {titleCase(record.source)}
                   </p>
+                  {record.approvedQuantity !== null && record.approvedQuantity !== undefined ? (
+                    <p className="mt-1 text-[11px] text-primary-500">
+                      Requested {formatQuantity(record.totalQuantity)} · Approved{' '}
+                      {formatQuantity(record.approvedQuantity)} · Transit{' '}
+                      {formatQuantity(record.inTransitQuantity)} · Accepted{' '}
+                      {formatQuantity(record.acceptedQuantity)} · Owing{' '}
+                      {formatQuantity(record.outstandingQuantity)}
+                    </p>
+                  ) : null}
                   <p className="text-[11px] text-primary-400">
                     {record.createdByName} · {formatDateTime(record.createdAt)}
                   </p>

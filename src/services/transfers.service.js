@@ -29,8 +29,17 @@ export const approveTransferRequest = (requestId, note) =>
 export const declineTransferRequest = (requestId, reason) =>
   post(`/transfers/requests/${requestId}/decline`, { reason });
 
-export const receiveTransferRequest = (requestId, note) =>
-  post(`/transfers/requests/${requestId}/receive`, { note: note || null });
+export const receiveTransferRequest = (requestId, note, items) =>
+  post(`/transfers/requests/${requestId}/receive`, {
+    note: note || null,
+    items: Array.isArray(items) && items.length > 0 ? items : undefined
+  });
+
+export const resolveTransferShortage = (requestId, lineId, resolution, note) =>
+  post(`/transfers/requests/${requestId}/shortages/${lineId}/resolve`, {
+    resolution,
+    note
+  });
 
 export const cancelTransferRequest = (requestId, reason) =>
   post(`/transfers/requests/${requestId}/cancel`, { reason });

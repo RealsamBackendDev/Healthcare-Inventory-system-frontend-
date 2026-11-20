@@ -25,6 +25,7 @@ export default function LgRequestsPage() {
   const { hasPermission } = useAuth();
   const canReview = hasPermission(PERMISSIONS.REQUISITIONS_LG_REVIEW);
   const canDispatch = hasPermission(PERMISSIONS.DISPATCHES_POST);
+  const canCloseDiscrepancies = hasPermission(PERMISSIONS.DISCREPANCIES_CLOSE);
 
   const [status, setStatus] = useState('pending_approval');
   const [requests, setRequests] = useState([]);
@@ -38,10 +39,16 @@ export default function LgRequestsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+  const [dispatchKey, setDispatchKey] = useState('');
   const [approved, setApproved] = useState({});
   const [quantities, setQuantities] = useState({});
   const [dispatchNotes, setDispatchNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [resolvingId, setResolvingId] = useState(null);
+  const [shortClosing, setShortClosing] = useState(false);
+  const [shortQuantities, setShortQuantities] = useState({});
+  const [shortReason, setShortReason] = useState('');
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -69,7 +76,9 @@ export default function LgRequestsPage() {
       const nextApproved = {};
       const nextQuantities = {};
       (result.items || []).forEach((item) => {
-        nextApproved[item.drugId] = String(item.approvedQuantity ?? item.requestedQuantity);
+        nextApproved[item.drugId] = String(
+          item.suggestedQuantity ?? item.approvedQuantity ?? item.requestedQuantity
+        );
         nextQuantities[item.drugId] = String(
           Math.min(item.outstandingQuantity ?? 0, item.warehouseQuantity ?? 0)
         );
@@ -77,6 +86,11 @@ export default function LgRequestsPage() {
       setApproved(nextApproved);
       setQuantities(nextQuantities);
       setDispatchNotes('');
+      setResolutionNote('');
+      setResolvingId(null);
+      setShortClosing(false);
+      setShortQuantities({});
+      setShortReason('');
       setDispatching(false);
       setShowReject(false);
       setRejectReason('');
@@ -163,11 +177,16 @@ export default function LgRequestsPage() {
     setError('');
     setNotice('');
     try {
+      const key = dispatchKey || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      setDispatchKey(key);
+
       const result = await lgService.dispatchRequest(selectedId, {
         notes: dispatchNotes || null,
+        clientRequestId: key,
         items
       });
       setNotice(`Dispatch ${result.dispatchNumber} posted to ${result.centreName}.`);
+      setDispatchKey('');
       setDispatching(false);
       await refreshAfterAction();
     } catch (actionError) {
@@ -176,6 +195,67 @@ export default function LgRequestsPage() {
       setBusy(false);
     }
   };
+
+  const handleResolveDiscrepancy = async (itemId, resolution) => {
+    if (resolutionNote.trim().length < 3) {
+      setError('Write a short note explaining what happened to the missing stock.');
+      return;
+    }
+    setResolvingId(itemId);
+    setError('');
+    setNotice('');
+    try {
+      const result = await lgService.resolveDiscrepancy(itemId, resolution, resolutionNote.trim());
+      setNotice(
+        resolution === 'reissue'
+          ? `Shortage of ${result.drugName} reopened. What is owed can be dispatched again.`
+          : `Shortage of ${result.drugName} written off.${
+              result.requisitionClosed ? ' The request is now closed.' : ''
+            }`
+      );
+      setResolutionNote('');
+      await refreshAfterAction();
+    } catch (actionError) {
+      setError(actionError.message || 'The shortage could not be settled.');
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
+  const handleCloseShort = async () => {
+    const items = Object.entries(shortQuantities)
+      .map(([drugId, value]) => ({ drugId, quantity: toNumber(value) }))
+      .filter((entry) => entry.quantity > 0);
+    if (items.length === 0) {
+      setError('Enter the quantity you are closing for at least one drug.');
+      return;
+    }
+    if (shortReason.trim().length < 3) {
+      setError('Write a short reason for closing the balance.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await lgService.closeShort(selectedId, items, shortReason.trim());
+      setNotice(
+        result.requisitionClosed
+          ? 'The balance is closed and the request is now complete.'
+          : 'The balance is closed short. The rest of the request is still being supplied.'
+      );
+      setShortClosing(false);
+      setShortQuantities({});
+      setShortReason('');
+      await refreshAfterAction();
+    } catch (actionError) {
+      setError(actionError.message || 'The balance could not be closed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openDiscrepancies = (detail?.discrepancies || []).filter((entry) => entry.status === 'open');
 
   const outstandingTotal = (detail?.items || []).reduce(
     (total, item) => total + toNumber(item.outstandingQuantity),
@@ -236,6 +316,15 @@ export default function LgRequestsPage() {
                       <p className="text-xs text-primary-500">
                         {request.requisitionNumber} · {request.itemCount} item(s)
                       </p>
+                      {request.approvedQuantity !== null && request.approvedQuantity !== undefined ? (
+                        <p className="mt-1 text-[11px] text-primary-500">
+                          Requested {formatQuantity(request.totalQuantity)} · Approved{' '}
+                          {formatQuantity(request.approvedQuantity)} · Transit{' '}
+                          {formatQuantity(request.inTransitQuantity)} · Accepted{' '}
+                          {formatQuantity(request.acceptedQuantity)} · Owing{' '}
+                          {formatQuantity(request.outstandingQuantity)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-semibold text-primary-700">
@@ -280,6 +369,8 @@ export default function LgRequestsPage() {
                     <th className="py-2">Drug</th>
                     <th className="py-2 text-right">Asked</th>
                     <th className="py-2 text-right">Approved</th>
+                    <th className="py-2 text-right">Transit</th>
+                    <th className="py-2 text-right">Accepted</th>
                     <th className="py-2 text-right">Owing</th>
                   </tr>
                 </thead>
@@ -290,16 +381,29 @@ export default function LgRequestsPage() {
                         <p className="font-medium text-primary-800">{item.drugName}</p>
                         <p className="text-[11px] text-primary-400">
                           {item.drugCode}
-                          {toNumber(item.inTransitQuantity) > 0
-                            ? ` · ${formatQuantity(item.inTransitQuantity)} on the road`
-                            : ''}
                         </p>
+                        {toNumber(item.replacementAuthorisedQuantity) > 0 ? (
+                          <p className="text-[11px] text-maroon-600">
+                            +{formatQuantity(item.replacementAuthorisedQuantity)} replacement owed
+                          </p>
+                        ) : null}
+                        {toNumber(item.closedShortQuantity) > 0 ? (
+                          <p className="text-[11px] text-primary-400">
+                            {formatQuantity(item.closedShortQuantity)} closed short
+                          </p>
+                        ) : null}
                       </td>
                       <td className="py-2 text-right text-primary-700">
                         {formatQuantity(item.requestedQuantity)}
                       </td>
                       <td className="py-2 text-right font-semibold text-primary-800">
                         {formatQuantity(item.approvedQuantity)}
+                      </td>
+                      <td className="py-2 text-right text-primary-700">
+                        {formatQuantity(item.inTransitQuantity)}
+                      </td>
+                      <td className="py-2 text-right text-primary-700">
+                        {formatQuantity(item.acceptedQuantity)}
                       </td>
                       <td
                         className={`py-2 text-right font-semibold ${
@@ -324,6 +428,112 @@ export default function LgRequestsPage() {
                     ? ` · ${formatQuantity(detail.dispatch.damagedQuantity)} damaged`
                     : ''}
                 </Alert>
+              ) : null}
+
+              {openDiscrepancies.length > 0 ? (
+                <div className="mt-3 rounded-xl border border-maroon-200 bg-maroon-50 p-3">
+                  <h3 className="text-sm font-semibold text-maroon-800">Shortages to settle</h3>
+                  <p className="text-[11px] text-maroon-600">
+                    Nothing more can be dispatched on this request until each shortage is settled.
+                  </p>
+                  <ul className="mt-2 space-y-2">
+                    {openDiscrepancies.map((entry) => (
+                      <li key={entry.id} className="rounded-lg bg-white p-2">
+                        <p className="text-xs font-semibold text-primary-800">
+                          {entry.drugName} · {formatQuantity(entry.missingQuantity)} missing
+                        </p>
+                        <p className="text-[11px] text-primary-500">
+                          {entry.dispatchNumber}
+                          {entry.reason ? ` · ${entry.reason}` : ''}
+                        </p>
+                        {canCloseDiscrepancies ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              loading={resolvingId === entry.id}
+                              onClick={() => handleResolveDiscrepancy(entry.id, 'reissue')}
+                            >
+                              Replace stock
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              loading={resolvingId === entry.id}
+                              onClick={() => handleResolveDiscrepancy(entry.id, 'written_off')}
+                            >
+                              Write off
+                            </Button>
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  {canCloseDiscrepancies ? (
+                    <Input
+                      label="What happened to the missing stock?"
+                      className="mt-2"
+                      value={resolutionNote}
+                      onChange={(event) => setResolutionNote(event.target.value)}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+
+              {canCloseDiscrepancies &&
+              detail.requisition.status === 'approved' &&
+              outstandingTotal > 0 ? (
+                <div className="mt-3">
+                  {shortClosing ? (
+                    <div className="space-y-3 rounded-xl border border-sand-200 p-3">
+                      <h3 className="text-sm font-semibold text-primary-800">Close an unfulfilled balance</h3>
+                      <p className="text-[11px] text-primary-400">
+                        Use this when the balance will not be supplied. Nothing is added to facility stock.
+                      </p>
+                      {pendingDispatchItems.map((item) => (
+                        <div key={item.id} className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-primary-800">{item.drugName}</p>
+                            <p className="text-[11px] text-primary-400">
+                              Owing {formatQuantity(item.outstandingQuantity)}
+                            </p>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            max={item.outstandingQuantity}
+                            step="any"
+                            value={shortQuantities[item.drugId] ?? ''}
+                            onChange={(event) =>
+                              setShortQuantities((current) => ({
+                                ...current,
+                                [item.drugId]: event.target.value
+                              }))
+                            }
+                            className="field w-20"
+                          />
+                        </div>
+                      ))}
+                      <Input
+                        label="Why is this balance not being supplied?"
+                        value={shortReason}
+                        onChange={(event) => setShortReason(event.target.value)}
+                        placeholder="Out of stock at the state store"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setShortClosing(false)}>
+                          Cancel
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={handleCloseShort} loading={busy}>
+                          Close these lines
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => setShortClosing(true)}>
+                      Close an unfulfilled balance
+                    </Button>
+                  )}
+                </div>
               ) : null}
 
               {canReview && detail.requisition.status === 'pending_approval' ? (

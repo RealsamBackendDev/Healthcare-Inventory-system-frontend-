@@ -85,6 +85,14 @@ export function AuthProvider({ children }) {
     [applySession, session?.expiresIn]
   );
 
+  const switchMembership = useCallback(
+    async (membershipId) => {
+      const result = await authService.switchMembership(membershipId);
+      return applySession({ ...result, expiresIn: session?.expiresIn });
+    },
+    [applySession, session?.expiresIn]
+  );
+
   const hasPermission = useCallback(
     (permission) => {
       if (!permission) {
@@ -95,8 +103,17 @@ export function AuthProvider({ children }) {
     [session?.permissions]
   );
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    const memberships = session?.memberships || [];
+    const activeMembershipId =
+      memberships.find((item) =>
+        session?.activeCentre
+          ? item.healthcareCentreId === session.activeCentre.id
+          : !item.healthcareCentreId &&
+            item.localGovernmentId === session?.activeLocalGovernment?.id
+      )?.id || null;
+
+    return {
       session,
       user: session?.user || null,
       activeCentre: session?.activeCentre || null,
@@ -104,7 +121,8 @@ export function AuthProvider({ children }) {
       scopeType: session?.scopeType || 'facility',
       isLocalGovernment: Boolean(session?.activeLocalGovernment) && !session?.activeCentre,
       role: session?.role || null,
-      memberships: session?.memberships || [],
+      memberships,
+      activeMembershipId,
       permissions: session?.permissions || [],
       isAdministrator: session?.role?.code === ROLES.ADMINISTRATOR,
       status,
@@ -112,11 +130,11 @@ export function AuthProvider({ children }) {
       isLoading: status === 'loading',
       login,
       logout,
+      switchMembership,
       changePassword,
       hasPermission
-    }),
-    [session, status, login, logout, changePassword, hasPermission]
-  );
+    };
+  }, [session, status, login, logout, switchMembership, changePassword, hasPermission]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

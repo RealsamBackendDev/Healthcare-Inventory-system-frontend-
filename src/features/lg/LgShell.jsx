@@ -4,21 +4,26 @@ import {
   ArrowLeftRight,
   BarChart3,
   Bell,
+  Building2,
   ClipboardList,
   LayoutDashboard,
   Layers,
   LogOut,
   Menu,
   RefreshCw,
+  ScrollText,
   ShoppingCart,
   Truck,
+  Users,
   Warehouse,
   X
 } from 'lucide-react';
 import BrandMark from '../../components/common/BrandMark.jsx';
+import MembershipSwitcher from '../../components/layout/MembershipSwitcher.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { initialsOf } from '../../utils/format.js';
 import * as lgService from '../../services/lg.service.js';
+import { PERMISSIONS } from '../../utils/permissions.js';
 
 const groups = [
   {
@@ -41,13 +46,19 @@ const groups = [
     items: [
       { to: '/lg/reports', label: 'Reports', icon: BarChart3 }
     ]
+  },
+  {
+    label: 'Administration',
+    items: [
+      { to: '/lg/centres', label: 'Centres', icon: Building2, permission: PERMISSIONS.ORGANISATIONS_MANAGE },
+      { to: '/lg/users', label: 'Users', icon: Users, permission: PERMISSIONS.USERS_MANAGE },
+      { to: '/lg/audit', label: 'Audit trail', icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW }
+    ]
   }
 ];
 
-const flatItems = groups.flatMap((group) => group.items);
-
 export default function LgShell({ children }) {
-  const { user, activeLocalGovernment, role, logout, isLocalGovernment } = useAuth();
+  const { user, activeLocalGovernment, role, logout, isLocalGovernment, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,6 +87,14 @@ export default function LgShell({ children }) {
   useEffect(() => {
     loadAlerts();
   }, [loadAlerts]);
+
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.permission || hasPermission(item.permission))
+    }))
+    .filter((group) => group.items.length > 0);
+  const flatItems = visibleGroups.flatMap((group) => group.items);
 
   if (!isLocalGovernment) {
     return <Navigate to="/dashboard" replace />;
@@ -138,7 +157,7 @@ export default function LgShell({ children }) {
         </div>
 
         <nav className="mt-4 flex-1 space-y-5 overflow-y-auto px-3 pb-6">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <div key={group.label}>
               <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-300">
                 {group.label}
@@ -220,6 +239,8 @@ export default function LgShell({ children }) {
               <span className="h-1.5 w-1.5 rounded-full bg-leaf-500" />
               {activeLocalGovernment?.code || 'LG'}
             </span>
+
+            <MembershipSwitcher />
 
             <div className="relative">
               <button

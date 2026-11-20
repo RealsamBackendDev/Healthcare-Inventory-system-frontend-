@@ -85,7 +85,7 @@ export const navigationGroups = [
         to: '/transfer-requests',
         label: 'Transfer requests',
         icon: Inbox,
-        permission: PERMISSIONS.REQUISITIONS_CREATE
+        permission: PERMISSIONS.TRANSFERS_VIEW
       },
       {
         to: '/expiry',

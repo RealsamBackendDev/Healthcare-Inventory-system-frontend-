@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, RefreshCw, Truck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Check, Printer, RefreshCw, Truck } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
@@ -23,6 +24,7 @@ const emptyLine = (quantity) => ({
 
 export default function DeliveriesPage() {
   const { activeCentre } = useAuth();
+  const navigate = useNavigate();
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -62,7 +64,7 @@ export default function DeliveriesPage() {
       setDelivery(result);
       const nextLines = {};
       (result.items || []).forEach((item) => {
-        nextLines[item.id] = emptyLine(item.quantity);
+        nextLines[item.id] = emptyLine(item.pendingQuantity);
       });
       setLines(nextLines);
       setNote('');
@@ -82,21 +84,24 @@ export default function DeliveriesPage() {
 
   const summaries = useMemo(() => {
     return (delivery?.items || []).map((item) => {
-      const line = lines[item.id] || emptyLine(item.quantity);
+      const pending = toNumber(item.pendingQuantity);
+      const line = lines[item.id] || emptyLine(pending);
       const accepted = toNumber(line.accepted);
       const damaged = toNumber(line.damaged);
       const missing = toNumber(line.missing);
       const counted = accepted + damaged + missing;
-      const difference = Math.round((item.quantity - counted) * 1000) / 1000;
+      const difference = Math.round((pending - counted) * 1000) / 1000;
       const hasDiscrepancy = damaged > 0 || missing > 0;
       const reason = (line.reason || '').trim();
       return {
         item,
+        pending,
         accepted,
         damaged,
         missing,
+        counted,
         difference: Math.abs(difference) < 0.001 ? 0 : difference,
-        balanced: isBalanced(difference),
+        balanced: difference >= -0.0005,
         hasDiscrepancy,
         reason,
         reasonOk: !hasDiscrepancy || reason.length >= 3
@@ -114,7 +119,10 @@ export default function DeliveriesPage() {
   );
 
   const canSubmit =
-    summaries.length > 0 && summaries.every((line) => line.balanced && line.reasonOk) && !receiving;
+    summaries.length > 0 &&
+    summaries.every((line) => line.balanced && line.reasonOk) &&
+    totals.accepted + totals.damaged + totals.missing > 0 &&
+    !receiving;
 
   const handleReceive = async () => {
     setReceiving(true);
@@ -132,13 +140,16 @@ export default function DeliveriesPage() {
         note: note || null,
         items
       });
+      const remaining = result.remainingQuantity || 0;
       setNotice(
         `${result.dispatchNumber} confirmed: ${formatQuantity(result.acceptedQuantity)} accepted, ${formatQuantity(
           result.damagedQuantity
         )} damaged, ${formatQuantity(result.missingQuantity)} missing. ${
-          result.requisitionClosed
-            ? 'The requisition is now complete.'
-            : 'The shortfall stays outstanding so the warehouse can send it again.'
+          remaining > 0
+            ? `${formatQuantity(remaining)} is still on the way — record another receipt when it arrives.`
+            : result.requisitionClosed
+              ? 'The requisition is now complete.'
+              : 'The shortfall stays outstanding so the warehouse can send it again.'
         }`
       );
       setDelivery(null);
@@ -223,8 +234,8 @@ export default function DeliveriesPage() {
               </div>
 
               <p className="mt-3 rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-600">
-                Count every batch. Accepted, damaged and missing must add up to the quantity
-                dispatched; anything missing stays outstanding and can be sent again.
+                Count what arrived in this trip. Anything you leave unaccounted stays on the
+                dispatch, so you can record a second receipt when the rest turns up.
               </p>
 
               <ul className="mt-3 space-y-3">
@@ -240,7 +251,7 @@ export default function DeliveriesPage() {
                         </p>
                       </div>
                       <p className="whitespace-nowrap text-sm font-bold text-primary-800">
-                        {formatQuantity(line.item.quantity)} {line.item.unitOfMeasure}
+                        {formatQuantity(line.item.pendingQuantity)} of {formatQuantity(line.item.quantity)}
                       </p>
                     </div>
 
@@ -271,11 +282,15 @@ export default function DeliveriesPage() {
                       />
                     </div>
 
-                    {line.difference !== 0 ? (
+                    {line.difference < 0 ? (
                       <p className="mt-1.5 text-[11px] font-semibold text-maroon-600">
+                        {formatQuantity(Math.abs(line.difference))} more than is still on the way
+                      </p>
+                    ) : line.counted > 0 ? (
+                      <p className="mt-1.5 text-[11px] text-primary-400">
                         {line.difference > 0
-                          ? `${formatQuantity(line.difference)} still to be accounted for`
-                          : `${formatQuantity(Math.abs(line.difference))} more than was dispatched`}
+                          ? `${formatQuantity(line.difference)} stays outstanding for a later trip`
+                          : 'This line is complete'}
                       </p>
                     ) : null}
 
@@ -317,7 +332,14 @@ export default function DeliveriesPage() {
                 />
               </div>
 
-              <div className="mt-3 flex justify-end gap-2">
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/deliveries/${selectedId}/note`)}
+                >
+                  <Printer className="h-4 w-4" aria-hidden="true" />
+                  Delivery note
+                </Button>
                 <Button variant="outline" onClick={closeDetail}>
                   Close
                 </Button>

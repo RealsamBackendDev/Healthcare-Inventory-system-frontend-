@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, Menu } from 'lucide-react';
+import MembershipSwitcher from './MembershipSwitcher.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import { findNavigationItem } from '../../utils/navigation.js';
 import { initialsOf } from '../../utils/format.js';
@@ -37,7 +38,9 @@ export default function Topbar({ onOpenMenu }) {
                                                                                                                                                                                                                     {activeCentre?.code || 'PHC'}
                                                                                                                                                                                                                             </span>
 
-                                                                                                                                                                                                                                    <NotificationBell />
+                                                                                                                                                                                                                                    <MembershipSwitcher />
+
+        <NotificationBell />
 
                                                                                                                                                                                                                                             <Link
                                                                                                                                                                                                                                                       to="/profile"

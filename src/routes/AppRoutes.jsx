@@ -25,9 +25,13 @@ import LgReportsPage from '../features/lg/LgReportsPage.jsx';
 import LgConsolidationsPage from '../features/lg/LgConsolidationsPage.jsx';
 import LgOrdersPage from '../features/lg/LgOrdersPage.jsx';
 import LgTransfersPage from '../features/lg/LgTransfersPage.jsx';
+import LgCentresPage from '../features/lg/LgCentresPage.jsx';
+import LgUsersPage from '../features/lg/LgUsersPage.jsx';
+import LgAuditPage from '../features/lg/LgAuditPage.jsx';
 import TransfersPage from '../features/transfers/TransfersPage.jsx';
 import TransferRequestsPage from '../features/transfers/TransferRequestsPage.jsx';
 import DeliveriesPage from '../features/deliveries/DeliveriesPage.jsx';
+import DeliveryNotePage from '../features/deliveries/DeliveryNotePage.jsx';
 import ChangePasswordPage from '../features/auth/ChangePasswordPage.jsx';
 import ComingSoon from '../components/common/ComingSoon.jsx';
 import NotFound from '../components/common/NotFound.jsx';
@@ -54,6 +58,10 @@ export default function AppRoutes() {
         <Route path="/lg/consolidations" element={<LgConsolidationsPage />} />
         <Route path="/lg/orders" element={<LgOrdersPage />} />
         <Route path="/lg/transfers" element={<LgTransfersPage />} />
+        <Route path="/lg/centres" element={<LgCentresPage />} />
+        <Route path="/lg/users" element={<LgUsersPage />} />
+        <Route path="/lg/audit" element={<LgAuditPage />} />
+        <Route path="/deliveries/:dispatchId/note" element={<DeliveryNotePage />} />
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />

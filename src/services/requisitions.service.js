@@ -24,8 +24,8 @@ const buildQuery = (params = {}) => {
 
                           export const submitRequisition = (requisitionId) => post(`/requisitions/${requisitionId}/submit`);
 
-                          export const approveRequisition = (requisitionId, comment) =>
-                            post(`/requisitions/${requisitionId}/approve`, { comment: comment || null });
+export const suggestQuantities = (requisitionId, payload) =>
+  post(`/requisitions/${requisitionId}/approve`, payload);
 
                             export const rejectRequisition = (requisitionId, reason) =>
                               post(`/requisitions/${requisitionId}/reject`, { reason });

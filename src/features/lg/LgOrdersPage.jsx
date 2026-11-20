@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ClipboardList, RefreshCw } from 'lucide-react';
+import { Check, ClipboardList, RefreshCw } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
@@ -10,6 +10,8 @@ import { formatDateTime, formatQuantity, titleCase } from '../../utils/format.js
 const statusTone = {
   draft: 'text-primary-500',
   submitted: 'text-leaf-600',
+  partially_received: 'text-amber-600',
+  received: 'text-primary-700',
   fulfilled: 'text-primary-700',
   cancelled: 'text-maroon-600'
 };
@@ -28,6 +30,12 @@ export default function LgOrdersPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [supplierName, setSupplierName] = useState('');
+  const [supplierReference, setSupplierReference] = useState('');
+  const [receiptNote, setReceiptNote] = useState('');
+  const [receiptLines, setReceiptLines] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,6 +95,74 @@ export default function LgOrdersPage() {
       setDetail(result);
     } catch (loadError) {
       setError(loadError.message || 'The order could not be opened.');
+    }
+  };
+
+  const openReceipt = (order) => {
+    const next = {};
+    (order.items || []).forEach((item) => {
+      next[item.drugId] = {
+        batchNumber: '',
+        expiryDate: '',
+        quantity: item.remainingQuantity > 0 ? String(item.remainingQuantity) : '',
+        unitCost: ''
+      };
+    });
+    setReceiptLines(next);
+    setSupplierName('');
+    setSupplierReference('');
+    setReceiptNote('');
+    setShowReceipt(true);
+    setError('');
+    setNotice('');
+  };
+
+  const updateReceiptLine = (drugId, key, value) => {
+    setReceiptLines((current) => ({
+      ...current,
+      [drugId]: { ...(current[drugId] || {}), [key]: value }
+    }));
+  };
+
+  const submitReceipt = async () => {
+    const items = Object.entries(receiptLines)
+      .map(([drugId, line]) => ({
+        drugId,
+        batchNumber: (line.batchNumber || '').trim(),
+        expiryDate: line.expiryDate || null,
+        quantity: Number(line.quantity || 0),
+        unitCost: line.unitCost === '' || line.unitCost === undefined ? null : Number(line.unitCost)
+      }))
+      .filter((item) => item.quantity > 0);
+
+    if (items.length === 0) {
+      setError('Enter a quantity for at least one drug.');
+      return;
+    }
+    if (items.some((item) => !item.batchNumber)) {
+      setError('Every drug being received needs a batch number.');
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    try {
+      const result = await lgService.receiveOrder(detail.id, {
+        supplierName: supplierName.trim() || null,
+        supplierReference: supplierReference.trim() || null,
+        notes: receiptNote.trim() || null,
+        items
+      });
+      setDetail(result);
+      setNotice(
+        `${result.receiptNumber} received. ${result.orderNumber} is now ${titleCase(result.status)}.`
+      );
+      setShowReceipt(false);
+      await load();
+    } catch (actionError) {
+      setError(actionError.message || 'The receipt could not be posted.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -275,6 +351,7 @@ export default function LgOrdersPage() {
                     <tr className="text-left text-[11px] uppercase tracking-wide text-primary-400">
                       <th className="py-1 pr-3">Drug</th>
                       <th className="py-1 pr-3 text-right">Ordered</th>
+                      <th className="py-1 pr-3 text-right">Received</th>
                       <th className="py-1 pr-3 text-right">Requested</th>
                       <th className="py-1 text-right">In store</th>
                     </tr>
@@ -288,6 +365,9 @@ export default function LgOrdersPage() {
                         </td>
                         <td className="py-2 pr-3 text-right font-semibold text-primary-800">
                           {formatQuantity(item.quantity)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-primary-700">
+                          {formatQuantity(item.receivedQuantity)}
                         </td>
                         <td className="py-2 pr-3 text-right text-primary-700">
                           {formatQuantity(item.requestedQuantity)}
@@ -316,14 +396,112 @@ export default function LgOrdersPage() {
                 </div>
               ) : null}
 
-              {detail.status === 'submitted' ? (
+              {detail.status === 'submitted' || detail.status === 'partially_received' ? (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => act(detail.id, 'fulfil')} loading={busy}>
-                    Mark fulfilled
+                  <Button size="sm" onClick={() => openReceipt(detail)} disabled={busy}>
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    Receive into warehouse
                   </Button>
-                  <Button variant="danger" size="sm" onClick={() => setShowCancel((current) => !current)}>
-                    Cancel
-                  </Button>
+                  {detail.status === 'submitted' ? (
+                    <Button variant="danger" size="sm" onClick={() => setShowCancel((current) => !current)}>
+                      Cancel
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {showReceipt &&
+              (detail.status === 'submitted' || detail.status === 'partially_received') ? (
+                <div className="mt-3 rounded-xl border border-sand-200 p-3">
+                  <p className="text-sm font-semibold text-primary-800">Receive supplier delivery</p>
+                  <p className="text-xs text-primary-500">
+                    Enter the batch details for what arrived. Anything you leave out stays outstanding on the
+                    order.
+                  </p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <Input
+                      label="Supplier"
+                      value={supplierName}
+                      onChange={(event) => setSupplierName(event.target.value)}
+                      placeholder="Optional"
+                    />
+                    <Input
+                      label="Supplier reference"
+                      value={supplierReference}
+                      onChange={(event) => setSupplierReference(event.target.value)}
+                      placeholder="Optional"
+                    />
+                  </div>
+
+                  <div className="mt-3 space-y-3">
+                    {detail.items
+                      .filter((item) => item.remainingQuantity > 0)
+                      .map((item) => (
+                        <div key={item.drugId} className="rounded-xl border border-sand-200 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-primary-800">{item.name}</p>
+                            <p className="whitespace-nowrap text-xs text-primary-500">
+                              {formatQuantity(item.remainingQuantity)} outstanding
+                            </p>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <Input
+                              label="Batch number"
+                              value={receiptLines[item.drugId]?.batchNumber ?? ''}
+                              onChange={(event) =>
+                                updateReceiptLine(item.drugId, 'batchNumber', event.target.value)
+                              }
+                            />
+                            <Input
+                              label="Expiry date"
+                              type="date"
+                              value={receiptLines[item.drugId]?.expiryDate ?? ''}
+                              onChange={(event) =>
+                                updateReceiptLine(item.drugId, 'expiryDate', event.target.value)
+                              }
+                            />
+                            <Input
+                              label="Quantity received"
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={receiptLines[item.drugId]?.quantity ?? ''}
+                              onChange={(event) =>
+                                updateReceiptLine(item.drugId, 'quantity', event.target.value)
+                              }
+                            />
+                            <Input
+                              label="Unit cost"
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={receiptLines[item.drugId]?.unitCost ?? ''}
+                              onChange={(event) =>
+                                updateReceiptLine(item.drugId, 'unitCost', event.target.value)
+                              }
+                            />
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="mt-2">
+                    <Input
+                      label="Note"
+                      value={receiptNote}
+                      onChange={(event) => setReceiptNote(event.target.value)}
+                      placeholder="Optional note for the record"
+                    />
+                  </div>
+
+                  <div className="mt-3 flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setShowReceipt(false)}>
+                      Close
+                    </Button>
+                    <Button size="sm" onClick={submitReceipt} loading={busy}>
+                      Post receipt
+                    </Button>
+                  </div>
                 </div>
               ) : null}
 
@@ -348,11 +526,43 @@ export default function LgOrdersPage() {
                 </div>
               ) : null}
 
-              {detail.status === 'fulfilled' ? (
+              {detail.status === 'fulfilled' || detail.status === 'received' ? (
                 <p className="mt-3 text-xs text-primary-500">
-                  Fulfilled by {detail.fulfilledByName || '—'} on {formatDateTime(detail.fulfilledAt)}
+                  Received by {detail.fulfilledByName || '—'} on {formatDateTime(detail.fulfilledAt)}
                   {detail.fulfilledNote ? ` — ${detail.fulfilledNote}` : ''}
                 </p>
+              ) : null}
+
+              {detail.receipts && detail.receipts.length > 0 ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-primary-400">
+                    Warehouse receipts
+                  </p>
+                  <ul className="mt-1 space-y-1 text-xs text-primary-600">
+                    {detail.receipts.map((receipt) => (
+                      <li key={receipt.id}>
+                        {receipt.receiptNumber} · {formatQuantity(receipt.totalQuantity)} units ·{' '}
+                        {formatDateTime(receipt.receivedAt)} · {receipt.receivedByName}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {detail.sources && detail.sources.length > 0 ? (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-primary-400">
+                    Requested by
+                  </p>
+                  <ul className="mt-1 space-y-1 text-xs text-primary-600">
+                    {detail.sources.map((source) => (
+                      <li key={source.requisitionId}>
+                        {source.centreName} · {source.requisitionNumber} ·{' '}
+                        {formatQuantity(source.requestedQuantity)} requested
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
 
               {detail.status === 'cancelled' ? (

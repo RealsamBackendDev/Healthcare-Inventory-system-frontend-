@@ -1,4 +1,4 @@
-import { BASE_URL, ApiError, get, getStoredSession, post } from './api.js';
+import { BASE_URL, ApiError, get, getStoredSession, patch, post } from './api.js';
 
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams();
@@ -13,6 +13,23 @@ const buildQuery = (params = {}) => {
 
 export const getOverview = () => get('/organisations/lg');
 
+export const listCentres = () => get('/lg/admin/centres');
+
+export const createCentre = (payload) => post('/lg/admin/centres', payload);
+
+export const updateCentre = (centreId, payload) => patch(`/lg/admin/centres/${centreId}`, payload);
+
+export const listLgUsers = () => get('/lg/admin/users');
+
+export const createLgUser = (payload) => post('/lg/admin/users', payload);
+
+export const updateLgUser = (userId, payload) => patch(`/lg/admin/users/${userId}`, payload);
+
+export const resetLgUserPassword = (userId, newPassword) =>
+  post(`/lg/admin/users/${userId}/reset-password`, { newPassword });
+
+export const listLgAudit = (params) => get(`/lg/admin/audit${buildQuery(params)}`);
+
 export const getWarehouse = (params) => get(`/lg/warehouse${buildQuery(params)}`);
 
 export const getWarehouseBatches = (params) => get(`/lg/warehouse/batches${buildQuery(params)}`);
@@ -20,6 +37,11 @@ export const getWarehouseBatches = (params) => get(`/lg/warehouse/batches${build
 export const createReceipt = (payload) => post('/lg/warehouse/receipts', payload);
 
 export const listReceipts = () => get('/lg/warehouse/receipts');
+
+export const getWarehouseMovements = (params) =>
+  get(`/lg/warehouse/movements${buildQuery(params)}`);
+
+export const getLedgerReconciliation = (params) => get(`/lg/ledger/reconciliation${buildQuery(params)}`);
 
 export const listRequests = (params) => get(`/lg/requisitions${buildQuery(params)}`);
 
@@ -60,12 +82,18 @@ export const getTransfer = (transferId) => get(`/lg/transfers/${transferId}`);
 export const cancelTransfer = (transferId, reason) =>
   post(`/lg/transfers/${transferId}/cancel`, { reason });
 
-export const listIncomingTransfers = () => get('/requisitions/transfers/incoming');
+export const listIncomingTransfers = () => get('/transfers/incoming');
 
-export const getIncomingTransfer = (transferId) => get(`/requisitions/transfers/${transferId}`);
+export const getIncomingTransfer = (transferId) => get(`/transfers/${transferId}`);
 
 export const receiveTransfer = (transferId, note) =>
-  post(`/requisitions/transfers/${transferId}/receive`, { note: note || null });
+  post(`/transfers/${transferId}/receive`, { note: note || null });
+
+export const resolveDiscrepancy = (itemId, resolution, note) =>
+  post(`/lg/discrepancies/${itemId}/resolve`, { resolution, note });
+
+export const closeShort = (requisitionId, items, reason) =>
+  post(`/lg/requisitions/${requisitionId}/close-short`, { items, reason });
 
 export const listOrderCandidates = () => get('/lg/orders/candidates');
 
@@ -82,6 +110,8 @@ export const fulfillOrder = (orderId, note) =>
   post(`/lg/orders/${orderId}/fulfill`, { note: note || null });
 
 export const cancelOrder = (orderId, reason) => post(`/lg/orders/${orderId}/cancel`, { reason });
+
+export const receiveOrder = (orderId, payload) => post(`/lg/orders/${orderId}/receipts`, payload);
 
 export const getConsolidationCandidates = () => get('/lg/consolidations/candidates');
 

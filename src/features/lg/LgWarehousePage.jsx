@@ -7,7 +7,7 @@ import LgShell from './LgShell.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import * as lgService from '../../services/lg.service.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
-import { formatDate, formatQuantity } from '../../utils/format.js';
+import { formatDate, formatQuantity, titleCase } from '../../utils/format.js';
 
 const emptyLine = () => ({
   drugId: '',
@@ -23,6 +23,8 @@ export default function LgWarehousePage() {
 
   const [data, setData] = useState(null);
   const [receipts, setReceipts] = useState([]);
+  const [check, setCheck] = useState(null);
+  const [ledger, setLedger] = useState(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -34,17 +36,22 @@ export default function LgWarehousePage() {
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState([emptyLine()]);
   const [saving, setSaving] = useState(false);
+  const [requestKey, setRequestKey] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [warehouse, history] = await Promise.all([
+      const [warehouse, history, ledgerCheck, movementList] = await Promise.all([
         lgService.getWarehouse({ search: search || undefined }),
-        lgService.listReceipts()
+        lgService.listReceipts(),
+        lgService.getLedgerReconciliation({ limit: 200 }).catch(() => null),
+        lgService.getWarehouseMovements({ limit: 100 }).catch(() => null)
       ]);
       setData(warehouse);
       setReceipts(history || []);
+      setCheck(ledgerCheck);
+      setLedger(movementList);
     } catch (loadError) {
       setError(loadError.message || 'The warehouse could not be loaded.');
     } finally {
@@ -94,15 +101,20 @@ export default function LgWarehousePage() {
       return;
     }
 
+    const key = requestKey || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    setRequestKey(key);
+
     setSaving(true);
     try {
       const result = await lgService.createReceipt({
         supplierName: supplierName || null,
         supplierReference: supplierReference || null,
         notes: notes || null,
+        clientRequestId: key,
         items
       });
       setNotice(`Stock received as ${result.receiptNumber}.`);
+      setRequestKey('');
       resetForm();
       setShowForm(false);
       await load();
@@ -115,6 +127,16 @@ export default function LgWarehousePage() {
 
   const items = data?.items || [];
   const drugs = items.map((item) => ({ id: item.drugId, label: `${item.drugName} (${item.drugCode})` }));
+
+  const ledgerBatches = check?.batches || [];
+  const transitBatches = ledgerBatches.filter(
+    (batch) => batch.locationType === 'in_transit' && Number(batch.batchQuantity) > 0
+  );
+  const mismatches = ledgerBatches.filter((batch) => Math.abs(Number(batch.difference)) > 0.0005);
+  const transitQuantity = transitBatches.reduce(
+    (total, batch) => total + Number(batch.batchQuantity || 0),
+    0
+  );
 
   return (
     <LgShell>
@@ -289,6 +311,115 @@ export default function LgWarehousePage() {
         </table>
       </section>
 
+      <section className="mt-6 overflow-hidden rounded-2xl border border-sand-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand-200 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-primary-800">Warehouse ledger</h2>
+            <p className="text-xs text-primary-500">Every movement in and out of the warehouse</p>
+          </div>
+          {ledger ? (
+            <p className="text-[11px] text-primary-500">
+              In {formatQuantity(ledger.totals.in)} · Out {formatQuantity(ledger.totals.out)}
+            </p>
+          ) : null}
+        </div>
+        <ul className="divide-y divide-sand-100">
+          {(ledger?.movements || []).map((movement) => (
+            <li key={movement.id} className="flex items-start justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-primary-800">{movement.drugName}</p>
+                <p className="text-xs text-primary-500">
+                  {titleCase(movement.movementType.replace(/_/g, ' '))} · batch {movement.batchNumber}
+                  {movement.locationName ? ` · ${movement.locationName}` : ''}
+                </p>
+                <p className="text-[11px] text-primary-400">
+                  {formatDate(movement.createdAt)} · {movement.actorFullName}
+                  {movement.reference ? ` · ${movement.reference}` : ''}
+                </p>
+                {movement.reason ? (
+                  <p className="text-[11px] text-primary-400">{movement.reason}</p>
+                ) : null}
+              </div>
+              <p
+                className={`whitespace-nowrap text-sm font-semibold ${
+                  movement.quantity >= 0 ? 'text-leaf-700' : 'text-maroon-600'
+                }`}
+              >
+                {movement.quantity >= 0 ? '+' : ''}
+                {formatQuantity(movement.quantity)} {movement.unitOfMeasure}
+              </p>
+            </li>
+          ))}
+          {ledger && ledger.movements.length === 0 ? (
+            <li className="px-4 py-6 text-center text-xs text-primary-400">
+              No warehouse movements yet.
+            </li>
+          ) : null}
+        </ul>
+      </section>
+
+      {check ? (
+        <section className="mt-6 rounded-2xl border border-sand-200 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand-200 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-primary-800">Stock check</h2>
+              <p className="text-xs text-primary-500">
+                Batch balances compared with the movement ledger
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                check.balanced ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              {check.balanced ? 'Balanced' : `${check.mismatched} to review`}
+            </span>
+          </div>
+
+          <div className="px-4 py-3">
+            <p className="text-xs text-primary-500">
+              {formatQuantity(transitQuantity)} units in transit right now
+            </p>
+            {transitBatches.length > 0 ? (
+              <ul className="mt-2 divide-y divide-sand-100">
+                {transitBatches.map((batch) => (
+                  <li
+                    key={batch.batchId}
+                    className="flex items-start justify-between gap-3 py-2"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-primary-800">{batch.drugName}</p>
+                      <p className="text-xs text-primary-500">
+                        Batch {batch.batchNumber} · {batch.drugCode}
+                      </p>
+                    </div>
+                    <p className="text-sm font-semibold text-primary-700">
+                      {formatQuantity(batch.batchQuantity)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-primary-400">Nothing is in transit right now.</p>
+            )}
+
+            {mismatches.length > 0 ? (
+              <div className="mt-3 rounded-xl bg-amber-50 p-3">
+                <p className="text-xs font-semibold text-amber-800">Batches that need review</p>
+                <ul className="mt-1 space-y-1">
+                  {mismatches.map((batch) => (
+                    <li key={batch.batchId} className="text-xs text-amber-800">
+                      {batch.drugName} · {batch.batchNumber} ({batch.locationName}):
+                      {` ${formatQuantity(batch.difference)} difference`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       <section className="mt-6 rounded-2xl border border-sand-200 bg-white">
         <div className="border-b border-sand-200 px-4 py-3">
           <h2 className="text-sm font-semibold text-primary-800">Recent receipts</h2>
@@ -301,6 +432,7 @@ export default function LgWarehousePage() {
                 <p className="text-xs text-primary-500">
                   {receipt.supplierName || 'Supplier not stated'}
                   {receipt.supplierReference ? ` · ${receipt.supplierReference}` : ''}
+                  {receipt.orderNumber ? ` · order ${receipt.orderNumber}` : ''}
                 </p>
               </div>
               <div className="text-right text-xs text-primary-500">
