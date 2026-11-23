@@ -1,5 +1,10 @@
 import { get, post } from './api.js';
 
+const newRequestKey = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `trq-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
 const buildQuery = (params = {}) => {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -24,15 +29,22 @@ export const getTransferRequest = (requestId) => get(`/transfers/requests/${requ
 export const createTransferRequest = (payload) => post('/transfers/requests', payload);
 
 export const approveTransferRequest = (requestId, note) =>
-  post(`/transfers/requests/${requestId}/approve`, { note: note || null });
+  post(`/transfers/requests/${requestId}/approve`, {
+    note: note || null,
+    clientRequestId: newRequestKey()
+  });
 
 export const declineTransferRequest = (requestId, reason) =>
-  post(`/transfers/requests/${requestId}/decline`, { reason });
+  post(`/transfers/requests/${requestId}/decline`, {
+    reason,
+    clientRequestId: newRequestKey()
+  });
 
 export const receiveTransferRequest = (requestId, note, items) =>
   post(`/transfers/requests/${requestId}/receive`, {
     note: note || null,
-    items: Array.isArray(items) && items.length > 0 ? items : undefined
+    items: Array.isArray(items) && items.length > 0 ? items : undefined,
+    clientRequestId: newRequestKey()
   });
 
 export const resolveTransferShortage = (requestId, lineId, resolution, note) =>

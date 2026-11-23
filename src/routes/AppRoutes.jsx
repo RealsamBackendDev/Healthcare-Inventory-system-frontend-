@@ -3,7 +3,6 @@ import AppLayout from '../layouts/AppLayout.jsx';
 import ProtectedRoute from './ProtectedRoute.jsx';
 import PublicRoute from './PublicRoute.jsx';
 import LoginPage from '../features/auth/LoginPage.jsx';
-import DashboardPage from '../features/dashboard/DashboardPage.jsx';
 import InventoryPage from '../features/inventory/InventoryPage.jsx';
 import DrugsPage from '../features/drugs/DrugsPage.jsx';
 import ReceivingPage from '../features/receiving/ReceivingPage.jsx';
@@ -28,8 +27,9 @@ import LgTransfersPage from '../features/lg/LgTransfersPage.jsx';
 import LgCentresPage from '../features/lg/LgCentresPage.jsx';
 import LgUsersPage from '../features/lg/LgUsersPage.jsx';
 import LgAuditPage from '../features/lg/LgAuditPage.jsx';
-import TransfersPage from '../features/transfers/TransfersPage.jsx';
+import LgDrugsPage from '../features/lg/LgDrugsPage.jsx';
 import TransferRequestsPage from '../features/transfers/TransferRequestsPage.jsx';
+import DamagePage from '../features/damage/DamagePage.jsx';
 import DeliveriesPage from '../features/deliveries/DeliveriesPage.jsx';
 import DeliveryNotePage from '../features/deliveries/DeliveryNotePage.jsx';
 import ChangePasswordPage from '../features/auth/ChangePasswordPage.jsx';
@@ -61,10 +61,11 @@ export default function AppRoutes() {
         <Route path="/lg/centres" element={<LgCentresPage />} />
         <Route path="/lg/users" element={<LgUsersPage />} />
         <Route path="/lg/audit" element={<LgAuditPage />} />
+        <Route path="/lg/drugs" element={<LgDrugsPage />} />
         <Route path="/deliveries/:dispatchId/note" element={<DeliveryNotePage />} />
         <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route index element={<Navigate to="/inventory" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/inventory" replace />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/drugs" element={<DrugsPage />} />
           <Route path="/receiving" element={<ReceivingPage />} />
@@ -73,8 +74,8 @@ export default function AppRoutes() {
           <Route path="/adjustments/stock-count" element={<StockCountPage />} />
           <Route path="/requisitions" element={<RequisitionsPage />} />
           <Route path="/deliveries" element={<DeliveriesPage />} />
-          <Route path="/transfers" element={<TransfersPage />} />
           <Route path="/transfer-requests" element={<TransferRequestsPage />} />
+          <Route path="/damage" element={<DamagePage />} />
           <Route path="/expiry" element={<ExpiryPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/users" element={<UsersPage />} />

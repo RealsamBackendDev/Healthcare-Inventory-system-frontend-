@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 import Alert from '../ui/Alert.jsx';
 import {
@@ -12,7 +13,8 @@ import {
         import { formatDateTime } from '../../utils/format.js';
 
         export default function NotificationBell() {
-          const { hasPermission } = useAuth();
+          const { hasPermission, isLocalGovernment } = useAuth();
+  const navigate = useNavigate();
             const allowed = hasPermission(PERMISSIONS.NOTIFICATIONS_VIEW);
 
               const [open, setOpen] = useState(false);
@@ -78,7 +80,29 @@ import {
                                                                                                                                                                                                                                               }
                                                                                                                                                                                                                                                 };
 
-                                                                                                                                                                                                                                                  const handleRead = async (notification) => {
+                                                                                                                                                                                                                                                  const destinationFor = (notification) => {
+    const type = notification.type || '';
+    if (type === 'return_pending' || type === 'return_received') {
+      return isLocalGovernment ? '/lg/warehouse' : '/damage';
+    }
+    if (notification.entityType === 'requisition') {
+      return isLocalGovernment ? '/lg/requests' : '/requisitions';
+    }
+    if (notification.entityType === 'lg_dispatch') {
+      return isLocalGovernment ? '/lg/dispatches' : '/deliveries';
+    }
+    if (type === 'adjustment_pending' && !isLocalGovernment) {
+      return '/adjustments';
+    }
+    return null;
+  };
+
+  const handleRead = async (notification) => {
+    const destination = destinationFor(notification);
+    if (destination) {
+      setOpen(false);
+      navigate(destination);
+    }
                                                                                                                                                                                                                                                       if (notification.isRead) {
                                                                                                                                                                                                                                                             return;
                                                                                                                                                                                                                                                                 }

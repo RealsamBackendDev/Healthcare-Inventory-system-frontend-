@@ -30,7 +30,21 @@ export const resetLgUserPassword = (userId, newPassword) =>
 
 export const listLgAudit = (params) => get(`/lg/admin/audit${buildQuery(params)}`);
 
+export const listLgDrugs = (params) => get(`/lg/drugs${buildQuery(params)}`);
+
+export const createLgDrug = (payload) => post('/lg/drugs', payload);
+
+export const updateLgDrug = (drugId, payload) => patch(`/lg/drugs/${drugId}`, payload);
+
+export const setLgDrugActive = (drugId, isActive) =>
+  post(`/lg/drugs/${drugId}/status`, { isActive });
+
 export const getWarehouse = (params) => get(`/lg/warehouse${buildQuery(params)}`);
+
+export const listWarehouseReturns = () => get('/lg/warehouse/returns');
+
+export const receiveWarehouseReturn = (batchId, payload) =>
+  post(`/lg/warehouse/returns/${batchId}/receive`, payload);
 
 export const getWarehouseBatches = (params) => get(`/lg/warehouse/batches${buildQuery(params)}`);
 
@@ -81,13 +95,6 @@ export const getTransfer = (transferId) => get(`/lg/transfers/${transferId}`);
 
 export const cancelTransfer = (transferId, reason) =>
   post(`/lg/transfers/${transferId}/cancel`, { reason });
-
-export const listIncomingTransfers = () => get('/transfers/incoming');
-
-export const getIncomingTransfer = (transferId) => get(`/transfers/${transferId}`);
-
-export const receiveTransfer = (transferId, note) =>
-  post(`/transfers/${transferId}/receive`, { note: note || null });
 
 export const resolveDiscrepancy = (itemId, resolution, note) =>
   post(`/lg/discrepancies/${itemId}/resolve`, { resolution, note });

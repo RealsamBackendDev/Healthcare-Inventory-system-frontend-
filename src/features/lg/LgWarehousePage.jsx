@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { PackagePlus, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { PackageCheck, PackagePlus, Plus, RefreshCw, RotateCcw, Trash2, Truck } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
@@ -38,20 +38,28 @@ export default function LgWarehousePage() {
   const [saving, setSaving] = useState(false);
   const [requestKey, setRequestKey] = useState('');
 
+  const [returns, setReturns] = useState(null);
+  const [returnId, setReturnId] = useState(null);
+  const [returnForm, setReturnForm] = useState({ outcome: 'restock', note: '' });
+  const [returnError, setReturnError] = useState('');
+  const [returnSaving, setReturnSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [warehouse, history, ledgerCheck, movementList] = await Promise.all([
+      const [warehouse, history, ledgerCheck, movementList, returnList] = await Promise.all([
         lgService.getWarehouse({ search: search || undefined }),
         lgService.listReceipts(),
         lgService.getLedgerReconciliation({ limit: 200 }).catch(() => null),
-        lgService.getWarehouseMovements({ limit: 100 }).catch(() => null)
+        lgService.getWarehouseMovements({ limit: 100 }).catch(() => null),
+        lgService.listWarehouseReturns().catch(() => null)
       ]);
       setData(warehouse);
       setReceipts(history || []);
       setCheck(ledgerCheck);
       setLedger(movementList);
+      setReturns(returnList);
     } catch (loadError) {
       setError(loadError.message || 'The warehouse could not be loaded.');
     } finally {
@@ -125,6 +133,48 @@ export default function LgWarehousePage() {
     }
   };
 
+  const openReturn = (item) => {
+    setReturnId(item.batchId);
+    setReturnForm({
+      outcome: item.allowedOutcomes.includes('restock') ? 'restock' : 'write_off',
+      note: ''
+    });
+    setReturnError('');
+    setNotice('');
+  };
+
+  const submitReturn = async (event) => {
+    event.preventDefault();
+    if (!returnId) {
+      return;
+    }
+    if (returnForm.note.trim().length < 3) {
+      setReturnError('Add a short note about what you found.');
+      return;
+    }
+
+    setReturnError('');
+    setReturnSaving(true);
+    try {
+      const result = await lgService.receiveWarehouseReturn(returnId, {
+        outcome: returnForm.outcome,
+        note: returnForm.note.trim()
+      });
+      setNotice(
+        `${formatQuantity(result.quantity)} ${result.unitOfMeasure} of ${result.drugName} ` +
+          `${result.outcome === 'restock' ? 'signed back into the warehouse' : 'written off on arrival'}.`
+      );
+      setReturnId(null);
+      setReturnForm({ outcome: 'restock', note: '' });
+      await load();
+    } catch (saveError) {
+      setReturnError(saveError.message || 'The return could not be signed in.');
+    } finally {
+      setReturnSaving(false);
+    }
+  };
+
+  const returnItems = returns?.items || [];
   const items = data?.items || [];
   const drugs = items.map((item) => ({ id: item.drugId, label: `${item.drugName} (${item.drugCode})` }));
 
@@ -309,6 +359,148 @@ export default function LgWarehousePage() {
             ) : null}
           </tbody>
         </table>
+      </section>
+
+      <section className="mt-6 overflow-hidden rounded-2xl border border-sand-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand-200 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Truck className="h-4 w-4 text-primary-400" aria-hidden="true" />
+            <div>
+              <h2 className="text-sm font-semibold text-primary-800">Returns in transit</h2>
+              <p className="text-xs text-primary-500">
+                Damaged stock sent back by a facility, waiting to be signed in
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-primary-500">
+            {returns ? `${formatQuantity(returns.totalQuantity)} units` : 'Loading'}
+          </p>
+        </div>
+
+        <ul className="divide-y divide-sand-100">
+          {returnItems.map((item) => (
+            <li key={item.batchId} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-primary-800">{item.drugName}</p>
+                  <p className="text-xs text-primary-500">
+                    {item.batchNumber} · expires {formatDate(item.expiryDate)} ·{' '}
+                    {formatQuantity(item.quantity)} {item.unitOfMeasure}
+                  </p>
+                  <p className="mt-1 text-[11px] font-medium text-primary-600">
+                    back from {item.fromCentreName}
+                    {item.supplierReference ? ` · ${item.supplierReference}` : ''}
+                  </p>
+                  {item.agreedWithName || item.note ? (
+                    <p className="mt-0.5 text-[11px] text-primary-500">
+                      {item.agreedWithName ? `agreed with ${item.agreedWithName}` : 'agreement recorded'}
+                      {item.note ? ` · ${item.note}` : ''}
+                    </p>
+                  ) : null}
+                  {canReceive ? (
+                    <button
+                      type="button"
+                      onClick={() => openReturn(item)}
+                      className="mt-1.5 rounded-lg border border-primary-200 px-2.5 py-1 text-[11px] font-semibold text-primary-700 transition hover:bg-primary-50"
+                    >
+                      Sign it back in
+                    </button>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-right">
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                      item.expired
+                        ? 'border-maroon-200 bg-maroon-50 text-maroon-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {item.expired ? 'Expired' : 'Awaiting arrival'}
+                  </span>
+                  <p className="text-[11px] text-primary-400">sent {formatDate(item.returnedAt)}</p>
+                </div>
+              </div>
+
+              {returnId === item.batchId ? (
+                <form
+                  onSubmit={submitReturn}
+                  className="mt-3 space-y-3 rounded-xl border border-sand-200 bg-sand-50 p-3"
+                >
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 'restock', label: 'Back into the warehouse', icon: RotateCcw },
+                      { value: 'write_off', label: 'Write off on arrival', icon: Trash2 }
+                    ].map((option) => {
+                      const disabled = !item.allowedOutcomes.includes(option.value);
+                      const active = returnForm.outcome === option.value;
+                      const Icon = option.icon;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() =>
+                            setReturnForm((current) => ({ ...current, outcome: option.value }))
+                          }
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+                            active
+                              ? 'border-primary-400 bg-white text-primary-900'
+                              : 'border-sand-300 bg-white text-primary-600 hover:text-primary-900'
+                          } disabled:cursor-not-allowed disabled:opacity-40`}
+                        >
+                          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {item.expired ? (
+                    <p className="rounded-lg border border-maroon-200 bg-maroon-50 px-3 py-2 text-[11px] text-maroon-700">
+                      This lot expired before it came back, so it can only be written off.
+                    </p>
+                  ) : null}
+
+                  <Input
+                    label="Note"
+                    value={returnForm.note}
+                    placeholder="What you found when it arrived"
+                    onChange={(event) =>
+                      setReturnForm((current) => ({ ...current, note: event.target.value }))
+                    }
+                  />
+
+                  {returnError ? (
+                    <p className="text-xs font-medium text-maroon-600">{returnError}</p>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="submit" size="sm" loading={returnSaving}>
+                      Sign it in
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setReturnId(null);
+                        setReturnForm({ outcome: 'restock', note: '' });
+                        setReturnError('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+            </li>
+          ))}
+          {returns && returnItems.length === 0 ? (
+            <li className="flex items-center justify-center gap-2 px-4 py-8 text-xs text-primary-400">
+              <PackageCheck className="h-4 w-4 text-leaf-400" aria-hidden="true" />
+              No damaged stock is on its way back to the warehouse.
+            </li>
+          ) : null}
+        </ul>
       </section>
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-sand-200 bg-white">

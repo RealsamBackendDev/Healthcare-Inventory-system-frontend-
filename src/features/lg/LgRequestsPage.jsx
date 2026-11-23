@@ -424,6 +424,9 @@ export default function LgRequestsPage() {
                   {detail.dispatch.missingQuantity > 0
                     ? ` · ${formatQuantity(detail.dispatch.missingQuantity)} missing at the facility`
                     : ''}
+                  {detail.dispatch.rejectedQuantity > 0
+                    ? ` · ${formatQuantity(detail.dispatch.rejectedQuantity)} rejected at the facility`
+                    : ''}
                   {detail.dispatch.damagedQuantity > 0
                     ? ` · ${formatQuantity(detail.dispatch.damagedQuantity)} damaged`
                     : ''}
@@ -441,6 +444,9 @@ export default function LgRequestsPage() {
                       <li key={entry.id} className="rounded-lg bg-white p-2">
                         <p className="text-xs font-semibold text-primary-800">
                           {entry.drugName} · {formatQuantity(entry.missingQuantity)} missing
+                          {entry.rejectedQuantity > 0
+                            ? ` · ${formatQuantity(entry.rejectedQuantity)} rejected`
+                            : ''}
                         </p>
                         <p className="text-[11px] text-primary-500">
                           {entry.dispatchNumber}

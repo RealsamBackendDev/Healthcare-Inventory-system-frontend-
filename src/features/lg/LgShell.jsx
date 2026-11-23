@@ -10,6 +10,7 @@ import {
   Layers,
   LogOut,
   Menu,
+  Pill,
   RefreshCw,
   ScrollText,
   ShoppingCart,
@@ -44,6 +45,7 @@ const groups = [
   {
     label: 'Control',
     items: [
+      { to: '/lg/drugs', label: 'Drug catalogue', icon: Pill, permission: PERMISSIONS.DRUGS_VIEW },
       { to: '/lg/reports', label: 'Reports', icon: BarChart3 }
     ]
   },

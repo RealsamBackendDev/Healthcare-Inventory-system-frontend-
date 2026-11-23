@@ -6,9 +6,10 @@ import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import { createStockCount } from '../../services/adjustments.service.js';
 import { listBatches } from '../../services/inventory.service.js';
+import { listDamageLots } from '../../services/damage.service.js';
 import { useAuth } from '../../hooks/useAuth.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
-import { formatDate, formatQuantity, titleCase } from '../../utils/format.js';
+import { formatDate, formatDateTime, formatQuantity, titleCase } from '../../utils/format.js';
 
 const scopeOptions = [
   { value: 'usable', label: 'Usable stock only' },
@@ -33,6 +34,8 @@ export default function StockCountPage() {
   const canCount = hasPermission(PERMISSIONS.ADJUSTMENTS_CREATE);
 
   const [batches, setBatches] = useState([]);
+  const [damageLots, setDamageLots] = useState([]);
+  const [damageError, setDamageError] = useState('');
   const [counts, setCounts] = useState({});
   const [scope, setScope] = useState('usable');
   const [searchInput, setSearchInput] = useState('');
@@ -58,6 +61,14 @@ export default function StockCountPage() {
       }
       all.sort((left, right) => left.drugName.localeCompare(right.drugName));
       setBatches(all);
+      try {
+        const damage = await listDamageLots();
+        setDamageLots(damage?.items || []);
+        setDamageError('');
+      } catch (damageLoadError) {
+        setDamageLots([]);
+        setDamageError('Damaged stock could not be loaded, so those lines are not shown.');
+      }
     } catch (loadError) {
       setError(loadError.message || 'Batches could not be loaded.');
     } finally {
@@ -80,22 +91,38 @@ export default function StockCountPage() {
       );
   }, [batches, scope, search]);
 
+  const damageByBatch = useMemo(() => {
+    const map = new Map();
+    damageLots.forEach((lot) => map.set(lot.batchId, lot));
+    return map;
+  }, [damageLots]);
+
+  const visibleDamage = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return damageLots.filter((lot) =>
+      term ? `${lot.drugName} ${lot.drugCode} ${lot.batchNumber}`.toLowerCase().includes(term) : true
+    );
+  }, [damageLots, search]);
+
   const groups = useMemo(() => {
     const map = new Map();
-    visible.forEach((batch) => {
-      if (!map.has(batch.drugId)) {
-        map.set(batch.drugId, {
-          drugId: batch.drugId,
-          drugName: batch.drugName,
-          drugCode: batch.drugCode,
-          unitOfMeasure: batch.unitOfMeasure,
-          batches: []
+    const ensure = (entry) => {
+      if (!map.has(entry.drugId)) {
+        map.set(entry.drugId, {
+          drugId: entry.drugId,
+          drugName: entry.drugName,
+          drugCode: entry.drugCode,
+          unitOfMeasure: entry.unitOfMeasure,
+          batches: [],
+          damage: []
         });
       }
-      map.get(batch.drugId).batches.push(batch);
-    });
-    return [...map.values()];
-  }, [visible]);
+      return map.get(entry.drugId);
+    };
+    visible.forEach((batch) => ensure(batch).batches.push(batch));
+    visibleDamage.forEach((lot) => ensure(lot).damage.push(lot));
+    return [...map.values()].sort((left, right) => left.drugName.localeCompare(right.drugName));
+  }, [visible, visibleDamage]);
 
   const enteredLines = useMemo(
     () => batches.filter((batch) => hasCount(counts, batch.id)),
@@ -190,9 +217,7 @@ export default function StockCountPage() {
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
             Adjustments
           </button>
-          <h1 className="text-2xl font-bold tracking-tight text-primary-900">
-            Physical stock count
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight text-primary-900">Physical stock count</h1>
           <p className="mt-1 text-sm text-primary-600">
             Count the shelves, type what you actually found, and only the differences become
             adjustments.
@@ -206,12 +231,16 @@ export default function StockCountPage() {
 
       {error ? <Alert tone="error">{error}</Alert> : null}
 
+      {damageError ? (
+        <p className="px-1 text-xs font-medium text-amber-700">{damageError}</p>
+      ) : null}
+
       {result ? (
         <div className="surface space-y-3 p-4 sm:p-5">
           <div>
             <h2 className="text-sm font-bold text-primary-900">Count submitted</h2>
             <p className="mt-0.5 text-xs text-primary-600">
-              {result.summary.lines} batch(es) counted ¡¤{' '}
+              {result.summary.lines} batch(es) counted Â·{' '}
               {result.summary.variances === 0
                 ? 'no differences found, so nothing needs approval'
                 : `${result.summary.variances} difference(s) raised as pending adjustments`}
@@ -233,7 +262,7 @@ export default function StockCountPage() {
                         {line.drugName}
                       </p>
                       <p className="text-[11px] text-primary-500">
-                        {line.batchNumber} ¡¤ system {formatQuantity(line.systemQuantity)} ¡¤ counted{' '}
+                        {line.batchNumber} Â· system {formatQuantity(line.systemQuantity)} Â· counted{' '}
                         {formatQuantity(line.countedQuantity)}
                       </p>
                     </div>
@@ -333,12 +362,24 @@ export default function StockCountPage() {
 
         {!loading && groups.length > 0 ? (
           <div className="space-y-3">
-            {groups.map((group) => (
+            {groups.map((group) => {
+              const damagedTotal = group.damage.reduce(
+                (total, lot) => total + Number(lot.quantity || 0),
+                0
+              );
+              const usableTotal = group.batches
+                .filter((batch) => batch.status === 'usable')
+                .reduce((total, batch) => total + Number(batch.quantity || 0), 0);
+
+              return (
               <div key={group.drugId} className="surface overflow-hidden">
                 <div className="border-b border-sand-200 bg-sand-50 px-4 py-2 sm:px-5">
                   <p className="text-sm font-bold text-primary-900">{group.drugName}</p>
                   <p className="text-[11px] text-primary-500">
-                    {group.drugCode} ¡¤ {group.unitOfMeasure}
+                    {group.drugCode} Â· {group.unitOfMeasure}
+                    {damagedTotal > 0
+                      ? ` Â· ${formatQuantity(usableTotal)} usable + ${formatQuantity(damagedTotal)} damaged`
+                      : ''}
                   </p>
                 </div>
                 <ul className="divide-y divide-sand-100">
@@ -352,9 +393,19 @@ export default function StockCountPage() {
                               {batch.batchNumber}
                             </p>
                             <p className="text-[11px] text-primary-500">
-                              on record {formatQuantity(batch.quantity)} ¡¤ expires{' '}
-                              {formatDate(batch.expiryDate)} ¡¤ {titleCase(batch.status)}
+                              on record {formatQuantity(batch.quantity)} Â· expires{' '}
+                              {formatDate(batch.expiryDate)} Â· {titleCase(batch.status)}
                             </p>
+                            {damageByBatch.has(batch.id) ? (
+                              <p className="text-[11px] text-amber-700">
+                                Damaged {formatQuantity(damageByBatch.get(batch.id).quantity)}{' '}
+                                {batch.unitOfMeasure} Â· marked{' '}
+                                {formatDateTime(damageByBatch.get(batch.id).markedAt)}
+                                {damageByBatch.get(batch.id).markedByName
+                                  ? ` by ${damageByBatch.get(batch.id).markedByName}`
+                                  : ' on receipt'}
+                              </p>
+                            ) : null}
                           </div>
                           <input
                             type="number"
@@ -369,13 +420,11 @@ export default function StockCountPage() {
                           />
                           <span className="w-20 shrink-0 text-right text-[11px] font-semibold">
                             {variance === null ? (
-                              <span className="text-primary-400">¡ª</span>
+                              <span className="text-primary-400">â€”</span>
                             ) : variance === 0 ? (
                               <span className="text-leaf-600">Match</span>
                             ) : (
-                              <span
-                                className={variance < 0 ? 'text-maroon-600' : 'text-amber-700'}
-                              >
+                              <span className={variance < 0 ? 'text-maroon-600' : 'text-amber-700'}>
                                 {variance > 0 ? '+' : ''}
                                 {formatQuantity(variance)}
                               </span>
@@ -386,8 +435,80 @@ export default function StockCountPage() {
                     );
                   })}
                 </ul>
+                {group.damage.filter((lot) => !group.batches.some((batch) => batch.id === lot.batchId))
+                  .length > 0 ? (
+                  <div className="space-y-2 border-t border-amber-200 bg-amber-50/60 px-4 py-3 sm:px-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-amber-800">
+                        Damaged stock held
+                      </p>
+                      <p className="text-xs font-bold text-amber-800">
+                        {formatQuantity(damagedTotal)} {group.unitOfMeasure}
+                      </p>
+                    </div>
+                    <ul className="space-y-2">
+                      {group.damage
+                        .filter((lot) => !group.batches.some((batch) => batch.id === lot.batchId))
+                        .map((lot) => (
+                          <li
+                            key={lot.batchId}
+                            className="rounded-xl border border-amber-200 bg-white px-3 py-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-semibold text-primary-900">
+                                  {lot.batchNumber}
+                                </p>
+                                <p className="text-[11px] text-primary-500">
+                                  {titleCase(lot.status)} Â· expires {formatDate(lot.expiryDate)}
+                                  {lot.sourceReference ? ` Â· from ${lot.sourceReference}` : ''}
+                                </p>
+                              </div>
+                              <p className="shrink-0 text-xs font-bold text-amber-800">
+                                {formatQuantity(lot.quantity)} {lot.unitOfMeasure}
+                              </p>
+                            </div>
+                            <p className="mt-1 text-[11px] text-primary-600">
+                              Marked damaged {formatDateTime(lot.markedAt)}
+                              {lot.markedByName ? ` by ${lot.markedByName}` : ' on receipt'}
+                            </p>
+                            {lot.lastDecision ? (
+                              <p className="text-[11px] text-primary-600">
+                                Last decision: {titleCase(lot.lastDecision.disposition)}{' '}
+                                {formatQuantity(lot.lastDecision.quantity)} {group.unitOfMeasure}
+                                {lot.lastDecision.lossBearer
+                                  ? ` Â· loss borne by the ${lot.lastDecision.lossBearer}`
+                                  : ''}
+                                {lot.lastDecision.replacementOwed ? ' Â· replacement owed' : ''}
+                                {' Â· '}
+                                {lot.lastDecision.recordedByName} Â·{' '}
+                                {formatDateTime(lot.lastDecision.recordedAt)}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-primary-400">
+                                No decision recorded yet
+                              </p>
+                            )}
+                            {lot.lastDecision?.note ? (
+                              <p className="mt-0.5 text-[11px] italic text-primary-500">
+                                {lot.lastDecision.note}
+                              </p>
+                            ) : null}
+                          </li>
+                        ))}
+                    </ul>
+                    <p className="text-[11px] text-primary-600">
+                      Damaged stock is not counted on this screen. Total on hand for this drug:{' '}
+                      <span className="font-semibold text-primary-900">
+                        {formatQuantity(usableTotal + damagedTotal)} {group.unitOfMeasure}
+                      </span>{' '}
+                      ({formatQuantity(usableTotal)} usable + {formatQuantity(damagedTotal)} damaged)
+                    </p>
+                  </div>
+                ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : null}
 

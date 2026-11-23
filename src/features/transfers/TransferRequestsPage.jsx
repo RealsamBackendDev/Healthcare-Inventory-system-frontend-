@@ -200,7 +200,8 @@ export default function TransferRequestsPage() {
           pending: Number(line.pendingQuantity || 0),
           accepted: String(line.pendingQuantity || ''),
           damaged: '',
-          missing: ''
+          missing: '',
+          rejected: ''
         }));
       if (lines.length === 0) {
         setError('Everything on this transfer has already been received.');
@@ -242,13 +243,15 @@ export default function TransferRequestsPage() {
       const lines = (detail.batches || [])
         .filter(
           (line) =>
-            line.discrepancyStatus === 'open' && Number(line.missingQuantity || 0) > 0
+            line.discrepancyStatus === 'open' &&
+            Number(line.missingQuantity || 0) + Number(line.rejectedQuantity || 0) > 0
         )
         .map((line) => ({
           lineId: line.id,
           name: line.name,
           batchNumber: line.batchNumber,
           missing: Number(line.missingQuantity || 0),
+          rejected: Number(line.rejectedQuantity || 0),
           resolution: 'reissue',
           note: ''
         }));
@@ -305,12 +308,12 @@ export default function TransferRequestsPage() {
       const outcome = result.resolution || {};
       setNotice(
         outcome.resolution === 'reissue'
-          ? `Replacement of ${formatQuantity(outcome.missingQuantity || 0)} ${line.name} requested as ${
-              outcome.replacementTransferNumber || 'a new transfer'
-            }.`
-          : `Wrote off ${formatQuantity(outcome.missingQuantity || 0)} ${line.name} on ${
-              shortageDraft.transferNumber
-            }.`
+          ? `Replacement of ${formatQuantity(
+              outcome.shortageQuantity || 0
+            )} ${line.name} requested as ${outcome.replacementTransferNumber || 'a new transfer'}.`
+          : `Wrote off ${formatQuantity(outcome.shortageQuantity || 0)} ${
+              line.name
+            } on ${shortageDraft.transferNumber}.`
       );
       const remaining = shortageDraft.lines.filter((row) => row.lineId !== line.lineId);
       setShortageDraft(remaining.length > 0 ? { ...shortageDraft, lines: remaining } : null);
@@ -331,9 +334,17 @@ export default function TransferRequestsPage() {
         transferItemId: line.transferItemId,
         acceptedQuantity: Number(line.accepted || 0),
         damagedQuantity: Number(line.damaged || 0),
-        missingQuantity: Number(line.missing || 0)
+        missingQuantity: Number(line.missing || 0),
+        rejectedQuantity: Number(line.rejected || 0)
       }))
-      .filter((line) => line.acceptedQuantity + line.damagedQuantity + line.missingQuantity > 0);
+      .filter(
+        (line) =>
+          line.acceptedQuantity +
+            line.damagedQuantity +
+            line.missingQuantity +
+            line.rejectedQuantity >
+          0
+      );
 
     if (items.length === 0) {
       setError('Enter at least one quantity that arrived.');
@@ -356,7 +367,7 @@ export default function TransferRequestsPage() {
               summary.acceptedQuantity || 0
             )}, damaged ${formatQuantity(summary.damagedQuantity || 0)}, missing ${formatQuantity(
               summary.missingQuantity || 0
-            )}.`
+            )}, rejected ${formatQuantity(summary.rejectedQuantity || 0)}.`
           : `Saved. ${formatQuantity(summary.remainingQuantity || 0)} still on the way for ${
               result.transferNumber
             }.`
@@ -640,7 +651,7 @@ export default function TransferRequestsPage() {
                 Batch {line.batchNumber} · {formatQuantity(line.pending)} {line.unitOfMeasure} still on
                 the way
               </p>
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 <Input
                   label="Accepted"
                   type="number"
@@ -666,6 +677,15 @@ export default function TransferRequestsPage() {
                   value={line.missing}
                   onChange={(event) =>
                     updateReceiptLine(line.transferItemId, 'missing', event.target.value)
+                  }
+                />
+                <Input
+                  label="Rejected"
+                  type="number"
+                  min="0"
+                  value={line.rejected}
+                  onChange={(event) =>
+                    updateReceiptLine(line.transferItemId, 'rejected', event.target.value)
                   }
                 />
               </div>
@@ -723,7 +743,8 @@ export default function TransferRequestsPage() {
             <div key={line.lineId} className="space-y-2 rounded-xl border border-sand-200 p-3">
               <p className="text-sm font-semibold text-primary-800">{line.name}</p>
               <p className="text-[11px] text-primary-400">
-                Batch {line.batchNumber} · {formatQuantity(line.missing)} missing
+                Batch {line.batchNumber} · {formatQuantity(line.missing)} missing ·{' '}
+                {formatQuantity(line.rejected)} rejected
               </p>
               <div className="flex gap-2">
                 <Button

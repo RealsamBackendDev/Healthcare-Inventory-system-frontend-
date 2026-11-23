@@ -61,7 +61,7 @@ const Actions = ({ drug, canManage, onEdit, onToggle, busy }) => {
   );
 };
 
-export default function DrugTable({ drugs, loading, canManage, onEdit, onToggle, busyId }) {
+export default function DrugTable({ drugs, loading, canManage, onEdit, onToggle, busyId, showMinimum = true }) {
   if (loading) {
     return (
       <div className="divide-y divide-sand-100">
@@ -83,7 +83,9 @@ export default function DrugTable({ drugs, loading, canManage, onEdit, onToggle,
               <th className="px-5 py-3 font-semibold">Drug</th>
               <th className="px-3 py-3 font-semibold">Strength / form</th>
               <th className="px-3 py-3 font-semibold">Unit</th>
-              <th className="px-3 py-3 text-right font-semibold">Minimum</th>
+              {showMinimum ? (
+                <th className="px-3 py-3 text-right font-semibold">Minimum</th>
+              ) : null}
               <th className="px-3 py-3 font-semibold">Status</th>
               <th className="px-3 py-3 text-right font-semibold">Actions</th>
             </tr>
@@ -102,9 +104,11 @@ export default function DrugTable({ drugs, loading, canManage, onEdit, onToggle,
                 <td className="whitespace-nowrap px-3 py-3 text-primary-600">
                   {drug.unitOfMeasure}
                 </td>
-                <td className="whitespace-nowrap px-3 py-3 text-right text-primary-700">
-                  {formatQuantity(drug.minimumStockLevel)}
-                </td>
+                {showMinimum ? (
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-primary-700">
+                    {formatQuantity(drug.minimumStockLevel)}
+                  </td>
+                ) : null}
                 <td className="px-3 py-3">
                   <ActiveBadge isActive={drug.isActive} />
                 </td>
@@ -130,8 +134,8 @@ export default function DrugTable({ drugs, loading, canManage, onEdit, onToggle,
               <ItemName drug={drug} />
               <p className="mt-1 text-xs text-primary-500">
                 {drug.strength ? `${drug.strength} · ` : ''}
-                {drug.dosageForm} · min {formatQuantity(drug.minimumStockLevel)}{' '}
-                {drug.unitOfMeasure}
+                {drug.dosageForm} · {drug.unitOfMeasure}
+                {showMinimum ? ` · min ${formatQuantity(drug.minimumStockLevel)}` : ''}
               </p>
               <div className="mt-1.5">
                 <ActiveBadge isActive={drug.isActive} />

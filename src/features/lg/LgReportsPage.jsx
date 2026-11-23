@@ -11,7 +11,8 @@ const tabs = [
   { value: 'demand', label: 'Demand', withStatus: true },
   { value: 'warehouse', label: 'Warehouse stock', withStatus: false },
   { value: 'dispatches', label: 'Dispatches', withStatus: true },
-  { value: 'receipts', label: 'Receipts', withStatus: false }
+  { value: 'receipts', label: 'Receipts', withStatus: false },
+  { value: 'damage', label: 'Damage & returns', withStatus: false }
 ];
 
 const statusOptions = ['', 'pending_approval', 'approved', 'closed', 'rejected', 'cancelled'];

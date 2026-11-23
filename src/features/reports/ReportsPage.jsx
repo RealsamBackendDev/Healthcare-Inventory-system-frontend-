@@ -76,6 +76,12 @@ const reportTypes = [
     reviewStatus: true
   },
   {
+    value: 'damage',
+    label: 'Damage & returns',
+    filename: 'damage-report',
+    dates: true
+  },
+  {
     value: 'audit',
     label: 'Audit history',
     filename: 'audit-history-report',
@@ -495,7 +501,7 @@ export default function ReportsPage() {
               <h2 className="text-sm font-bold text-primary-900">{result.title}</h2>
               <p className="text-xs text-primary-500">
                 {formatQuantity(result.totalRows)} row
-                {Number(result.totalRows) === 1 ? '' : 's'} ¡¤ generated {formatDate(new Date())}
+                {Number(result.totalRows) === 1 ? '' : 's'} ï¿½ï¿½ generated {formatDate(new Date())}
               </p>
             </div>
             <p className="text-[11px] text-primary-400">

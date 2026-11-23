@@ -48,7 +48,16 @@ const toFormState = (drug) =>
       }
     : { ...emptyForm };
 
-export default function DrugFormDrawer({ open, drug, onClose, onSaved }) {
+export default function DrugFormDrawer({
+  open,
+  drug,
+  onClose,
+  onSaved,
+  onCreate,
+  onUpdate,
+  showMinimumStockLevel = true,
+  catalogueLabel = 'this centre’s catalogue'
+}) {
   const [form, setForm] = useState(toFormState(drug));
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
@@ -88,7 +97,7 @@ export default function DrugFormDrawer({ open, drug, onClose, onSaved }) {
       nextErrors.unitOfMeasure = 'A unit of measure is required';
     }
     const minimum = Number(form.minimumStockLevel);
-    if (!Number.isFinite(minimum) || minimum < 0) {
+    if (showMinimumStockLevel && (!Number.isFinite(minimum) || minimum < 0)) {
       nextErrors.minimumStockLevel = 'Enter a number of 0 or more';
     }
     if (Object.keys(nextErrors).length > 0) {
@@ -103,14 +112,17 @@ export default function DrugFormDrawer({ open, drug, onClose, onSaved }) {
       brandName: form.brandName.trim() || null,
       strength: form.strength.trim() || null,
       dosageForm: form.dosageForm.trim(),
-      unitOfMeasure: form.unitOfMeasure.trim(),
-      minimumStockLevel: minimum
+      unitOfMeasure: form.unitOfMeasure.trim()
     };
+    if (showMinimumStockLevel) {
+      payload.minimumStockLevel = minimum;
+    }
 
     setSaving(true);
     setError('');
     try {
-      const saved = isEdit ? await updateDrug(drug.id, payload) : await createDrug(payload);
+      const save = isEdit ? onUpdate || updateDrug : onCreate || createDrug;
+      const saved = isEdit ? await save(drug.id, payload) : await save(payload);
       onSaved(saved, isEdit);
     } catch (submitError) {
       setError(submitError.message || 'The drug could not be saved.');
@@ -125,7 +137,7 @@ export default function DrugFormDrawer({ open, drug, onClose, onSaved }) {
       onClose={onClose}
       title={isEdit ? 'Edit drug' : 'Add drug'}
       subtitle={
-        isEdit ? `${drug.code} · ${drug.name}` : 'Add a drug to this centre’s catalogue'
+        isEdit ? `${drug.code} · ${drug.name}` : `Add a drug to ${catalogueLabel}`
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -210,18 +222,20 @@ export default function DrugFormDrawer({ open, drug, onClose, onSaved }) {
               <option key={option} value={option} />
             ))}
           </datalist>
-          <Input
-            label="Minimum stock level"
-            name="minimumStockLevel"
-            type="number"
-            min="0"
-            step="any"
-            value={form.minimumStockLevel}
-            onChange={updateField('minimumStockLevel')}
-            error={errors.minimumStockLevel}
-            hint="Low stock alerts below this level"
-            required
-          />
+          {showMinimumStockLevel ? (
+            <Input
+              label="Minimum stock level"
+              name="minimumStockLevel"
+              type="number"
+              min="0"
+              step="any"
+              value={form.minimumStockLevel}
+              onChange={updateField('minimumStockLevel')}
+              error={errors.minimumStockLevel}
+              hint="Low stock alerts below this level"
+              required
+            />
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 pt-2 sm:flex-row-reverse">

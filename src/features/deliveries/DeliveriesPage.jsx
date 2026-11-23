@@ -19,6 +19,7 @@ const emptyLine = (quantity) => ({
   accepted: String(quantity),
   damaged: '0',
   missing: '0',
+  rejected: '0',
   reason: ''
 });
 
@@ -89,9 +90,10 @@ export default function DeliveriesPage() {
       const accepted = toNumber(line.accepted);
       const damaged = toNumber(line.damaged);
       const missing = toNumber(line.missing);
-      const counted = accepted + damaged + missing;
+      const rejected = toNumber(line.rejected);
+      const counted = accepted + damaged + missing + rejected;
       const difference = Math.round((pending - counted) * 1000) / 1000;
-      const hasDiscrepancy = damaged > 0 || missing > 0;
+      const hasDiscrepancy = damaged > 0 || missing > 0 || rejected > 0;
       const reason = (line.reason || '').trim();
       return {
         item,
@@ -99,6 +101,7 @@ export default function DeliveriesPage() {
         accepted,
         damaged,
         missing,
+        rejected,
         counted,
         difference: Math.abs(difference) < 0.001 ? 0 : difference,
         balanced: difference >= -0.0005,
@@ -113,15 +116,16 @@ export default function DeliveriesPage() {
     (sum, line) => ({
       accepted: sum.accepted + line.accepted,
       damaged: sum.damaged + line.damaged,
-      missing: sum.missing + line.missing
+      missing: sum.missing + line.missing,
+      rejected: sum.rejected + line.rejected
     }),
-    { accepted: 0, damaged: 0, missing: 0 }
+    { accepted: 0, damaged: 0, missing: 0, rejected: 0 }
   );
 
   const canSubmit =
     summaries.length > 0 &&
     summaries.every((line) => line.balanced && line.reasonOk) &&
-    totals.accepted + totals.damaged + totals.missing > 0 &&
+    totals.accepted + totals.damaged + totals.missing + totals.rejected > 0 &&
     !receiving;
 
   const handleReceive = async () => {
@@ -134,6 +138,7 @@ export default function DeliveriesPage() {
         acceptedQuantity: line.accepted,
         damagedQuantity: line.damaged,
         missingQuantity: line.missing,
+        rejectedQuantity: line.rejected,
         reason: line.hasDiscrepancy ? line.reason : null
       }));
       const result = await lgService.receiveDispatchDelivery(selectedId, {
@@ -144,7 +149,9 @@ export default function DeliveriesPage() {
       setNotice(
         `${result.dispatchNumber} confirmed: ${formatQuantity(result.acceptedQuantity)} accepted, ${formatQuantity(
           result.damagedQuantity
-        )} damaged, ${formatQuantity(result.missingQuantity)} missing. ${
+        )} damaged, ${formatQuantity(result.missingQuantity)} missing, ${formatQuantity(
+          result.rejectedQuantity
+        )} rejected. ${
           remaining > 0
             ? `${formatQuantity(remaining)} is still on the way — record another receipt when it arrives.`
             : result.requisitionClosed
@@ -207,6 +214,11 @@ export default function DeliveriesPage() {
                     {item.itemCount} item(s) · {formatQuantity(item.totalQuantity)} units · sent by{' '}
                     {item.dispatchedByName}
                   </p>
+                  {item.status === 'partially_received' ? (
+                    <p className="mt-1 text-[11px] font-semibold text-amber-700">
+                      Part received · {formatQuantity(item.pendingQuantity)} units still on the way
+                    </p>
+                  ) : null}
                 </div>
                 <p className="text-xs text-primary-400">{formatDate(item.dispatchedAt)}</p>
               </button>
@@ -255,7 +267,7 @@ export default function DeliveriesPage() {
                       </p>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                       <Input
                         label="Accepted"
                         type="number"
@@ -279,6 +291,14 @@ export default function DeliveriesPage() {
                         step="any"
                         value={lines[line.item.id]?.missing ?? ''}
                         onChange={(event) => updateLine(line.item.id, 'missing', event.target.value)}
+                      />
+                      <Input
+                        label="Rejected"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={lines[line.item.id]?.rejected ?? ''}
+                        onChange={(event) => updateLine(line.item.id, 'rejected', event.target.value)}
                       />
                     </div>
 
@@ -308,7 +328,7 @@ export default function DeliveriesPage() {
                 ))}
               </ul>
 
-              <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-sand-100 px-3 py-2 text-center">
+              <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-sand-100 px-3 py-2 text-center sm:grid-cols-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-primary-400">Accepted</p>
                   <p className="text-sm font-bold text-primary-800">{formatQuantity(totals.accepted)}</p>
@@ -320,6 +340,10 @@ export default function DeliveriesPage() {
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-primary-400">Missing</p>
                   <p className="text-sm font-bold text-primary-800">{formatQuantity(totals.missing)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-primary-400">Rejected</p>
+                  <p className="text-sm font-bold text-primary-800">{formatQuantity(totals.rejected)}</p>
                 </div>
               </div>
 

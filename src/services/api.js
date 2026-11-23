@@ -29,7 +29,18 @@ export class ApiError extends Error {
                                               window.localStorage.removeItem(SESSION_KEY);
                                               };
 
-                                              const parseBody = async (response) => {
+                                              const sessionHeaders = (session) => {
+  const headers = {};
+  if (session?.token) {
+    headers.Authorization = `Bearer ${session.token}`;
+  }
+  if (session?.activeCentre?.id) {
+    headers['X-Healthcare-Centre-Id'] = session.activeCentre.id;
+  }
+  return headers;
+};
+
+const parseBody = async (response) => {
                                                 const contentType = response.headers.get('content-type') || '';
                                                   if (!contentType.includes('application/json')) {
                                                       return null;
@@ -63,6 +74,7 @@ export class ApiError extends Error {
                                                                                                                                 export const request = async (path, { method = 'GET', body, headers = {}, signal } = {}) => {
                                                                                                                                   const session = getStoredSession();
                                                                                                                                     const requestHeaders = { Accept: 'application/json', ...headers };
+  Object.assign(requestHeaders, sessionHeaders(session));
                                                                                                                                       const options = { method, headers: requestHeaders, signal };
 
                                                                                                                                         if (body !== undefined) {
@@ -98,7 +110,7 @@ export class ApiError extends Error {
                                                                                                                                                                                                               try {
                                                                                                                                                                                                                   response = await fetch(`${BASE_URL}${path}`, {
                                                                                                                                                                                                                         method: 'POST',
-                                                                                                                                                                                                                              headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {},
+                                                                                                                                                                                                                              headers: sessionHeaders(session),
                                                                                                                                                                                                                                     body: formData
                                                                                                                                                                                                                                         });
                                                                                                                                                                                                                                           } catch (error) {

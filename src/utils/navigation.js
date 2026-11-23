@@ -1,5 +1,4 @@
 import {
-  LayoutDashboard,
   Pill,
   Boxes,
   PackagePlus,
@@ -12,24 +11,13 @@ import {
   Settings,
   ScrollText,
   Truck,
-  ArrowLeftRight,
+  PackageX,
   Inbox,
   UserCircle
 } from 'lucide-react';
 import { PERMISSIONS } from './permissions.js';
 
 export const navigationGroups = [
-  {
-    label: 'Overview',
-    items: [
-      {
-        to: '/dashboard',
-        label: 'Dashboard',
-        icon: LayoutDashboard,
-        permission: PERMISSIONS.REPORTS_VIEW
-      }
-    ]
-  },
   {
     label: 'Operations',
     items: [
@@ -76,16 +64,16 @@ export const navigationGroups = [
         permission: PERMISSIONS.DELIVERIES_RECEIVE
       },
       {
-        to: '/transfers',
-        label: 'Transfers',
-        icon: ArrowLeftRight,
-        permission: PERMISSIONS.DELIVERIES_RECEIVE
-      },
-      {
         to: '/transfer-requests',
         label: 'Transfer requests',
         icon: Inbox,
         permission: PERMISSIONS.TRANSFERS_VIEW
+      },
+      {
+        to: '/damage',
+        label: 'Damaged stock',
+        icon: PackageX,
+        permission: PERMISSIONS.INVENTORY_VIEW
       },
       {
         to: '/expiry',
