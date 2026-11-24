@@ -9,8 +9,8 @@ import { formatDate } from '../../utils/format.js';
 
 const roleOptions = [
   { code: 'LG_INVENTORY_OFFICER', name: 'Logistician', scope: 'lg' },
-  { code: 'LG_ADMIN', name: 'LG Administrator', scope: 'lg' },
-  { code: 'ADMINISTRATOR', name: 'Centre Administrator', scope: 'facility' },
+  { code: 'LG_ADMIN', name: 'MOH (Medical Officer of Health)', scope: 'lg' },
+  { code: 'ADMINISTRATOR', name: 'OIC (Officer In Charge)', scope: 'facility' },
   { code: 'STAFF', name: 'Centre Staff', scope: 'facility' }
 ];
 

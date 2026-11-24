@@ -34,19 +34,54 @@ const groups = [
   {
     label: 'Supply',
     items: [
-      { to: '/lg/warehouse', label: 'Warehouse', icon: Warehouse },
-      { to: '/lg/requests', label: 'Requests', icon: ClipboardList },
-      { to: '/lg/consolidations', label: 'Consolidations', icon: Layers },
-      { to: '/lg/orders', label: 'Orders', icon: ShoppingCart },
-      { to: '/lg/dispatches', label: 'Dispatches', icon: Truck },
-      { to: '/lg/transfers', label: 'Transfers', icon: ArrowLeftRight }
+      {
+        to: '/lg/warehouse',
+        label: 'Warehouse',
+        icon: Warehouse,
+        permission: PERMISSIONS.LG_WAREHOUSE_VIEW
+      },
+      {
+        to: '/lg/requests',
+        label: 'Requests',
+        icon: ClipboardList,
+        permission: PERMISSIONS.REQUISITIONS_LG_REVIEW
+      },
+      {
+        to: '/lg/consolidations',
+        label: 'Consolidations',
+        icon: Layers,
+        permission: PERMISSIONS.LG_CONSOLIDATIONS_MANAGE
+      },
+      {
+        to: '/lg/orders',
+        label: 'Orders',
+        icon: ShoppingCart,
+        permission: PERMISSIONS.LG_ORDERS_MANAGE
+      },
+      {
+        to: '/lg/dispatches',
+        label: 'Dispatches',
+        icon: Truck,
+        permission: PERMISSIONS.LG_WAREHOUSE_VIEW
+      },
+      {
+        to: '/lg/transfers',
+        label: 'Transfers',
+        icon: ArrowLeftRight,
+        permission: PERMISSIONS.LG_TRANSFERS_MANAGE
+      }
     ]
   },
   {
     label: 'Control',
     items: [
       { to: '/lg/drugs', label: 'Drug catalogue', icon: Pill, permission: PERMISSIONS.DRUGS_VIEW },
-      { to: '/lg/reports', label: 'Reports', icon: BarChart3 }
+      {
+        to: '/lg/reports',
+        label: 'Reports',
+        icon: BarChart3,
+        permission: PERMISSIONS.LG_REPORTS_VIEW
+      }
     ]
   },
   {

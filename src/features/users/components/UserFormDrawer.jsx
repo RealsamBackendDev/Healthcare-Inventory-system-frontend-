@@ -126,7 +126,7 @@ export default function UserFormDrawer({ open, onClose, onSaved, user, roles }) 
             onChange={(event) => setRoleCode(event.target.value)}
             className="field"
           >
-            {(roles.length > 0 ? roles : [{ code: 'STAFF', name: 'Staff' }, { code: 'ADMINISTRATOR', name: 'Administrator' }]).map(
+            {(roles.length > 0 ? roles : [{ code: 'STAFF', name: 'Staff' }, { code: 'ADMINISTRATOR', name: 'OIC (Officer In Charge)' }]).map(
               (role) => (
                 <option key={role.code} value={role.code}>
                   {role.name}

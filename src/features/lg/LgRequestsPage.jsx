@@ -443,7 +443,13 @@ export default function LgRequestsPage() {
                     {openDiscrepancies.map((entry) => (
                       <li key={entry.id} className="rounded-lg bg-white p-2">
                         <p className="text-xs font-semibold text-primary-800">
-                          {entry.drugName} · {formatQuantity(entry.missingQuantity)} missing
+                          {entry.drugName}
+                          {toNumber(entry.missingQuantity) > 0
+                            ? ` · ${formatQuantity(entry.missingQuantity)} missing`
+                            : ''}
+                          {toNumber(entry.damagedQuantity) > 0
+                            ? ` · ${formatQuantity(entry.damagedQuantity)} damaged`
+                            : ''}
                           {entry.rejectedQuantity > 0
                             ? ` · ${formatQuantity(entry.rejectedQuantity)} rejected`
                             : ''}
@@ -476,7 +482,7 @@ export default function LgRequestsPage() {
                   </ul>
                   {canCloseDiscrepancies ? (
                     <Input
-                      label="What happened to the missing stock?"
+                      label="What happened to the missing or damaged stock?"
                       className="mt-2"
                       value={resolutionNote}
                       onChange={(event) => setResolutionNote(event.target.value)}
