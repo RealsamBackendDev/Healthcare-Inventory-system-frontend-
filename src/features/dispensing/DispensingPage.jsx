@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
   HandHeart,
   Plus,
   RefreshCw,
-  Trash2
+  Search,
+  Trash2,
+  X
 } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -25,7 +27,6 @@ const nextKey = () => {
   lineKey += 1;
   return lineKey;
 };
-const emptyLine = () => ({ key: nextKey(), drugId: '', quantity: '' });
 
 export default function DispensingPage() {
   const { hasPermission } = useAuth();
@@ -33,7 +34,11 @@ export default function DispensingPage() {
 
   const [drugs, setDrugs] = useState([]);
   const [batchesByDrug, setBatchesByDrug] = useState({});
-  const [lines, setLines] = useState([emptyLine()]);
+  const [search, setSearch] = useState('');
+  const [pickedDrugId, setPickedDrugId] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [fieldError, setFieldError] = useState('');
+  const [lines, setLines] = useState([]);
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -85,38 +90,101 @@ export default function DispensingPage() {
     }
   };
 
-  const updateLine = (key, field) => (event) => {
+  const pickedDrug = drugs.find((drug) => drug.id === pickedDrugId) || null;
+
+  const matches = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term || pickedDrug) {
+      return [];
+    }
+    return drugs
+      .filter(
+        (drug) => drug.name.toLowerCase().includes(term) || drug.code.toLowerCase().includes(term)
+      )
+      .slice(0, 8);
+  }, [drugs, search, pickedDrug]);
+
+  const drugById = (drugId) => drugs.find((drug) => drug.id === drugId);
+
+  const chooseDrug = (drug) => {
+    setPickedDrugId(drug.id);
+    setSearch(`${drug.name} (${drug.code})`);
+    setQuantity('');
+    setFieldError('');
+    if (error) {
+      setError('');
+    }
+    loadBatches(drug.id);
+  };
+
+  const clearPick = () => {
+    setPickedDrugId('');
+    setSearch('');
+    setQuantity('');
+    setFieldError('');
+  };
+
+  const addLine = () => {
+    if (!pickedDrug) {
+      setFieldError('Search for a drug and pick it from the list first');
+      return;
+    }
+    if (lines.some((line) => line.drugId === pickedDrug.id)) {
+      setFieldError(
+        `${pickedDrug.name} is already on the list. Remove that line before adding it again.`
+      );
+      return;
+    }
+    const value = Number(quantity);
+    if (!Number.isFinite(value) || value <= 0) {
+      setFieldError('Enter a quantity above zero');
+      return;
+    }
+    setLines((current) => [...current, { key: nextKey(), drugId: pickedDrug.id, quantity }]);
+    clearPick();
+    if (error) {
+      setError('');
+    }
+  };
+
+  const updateLineQuantity = (key) => (event) => {
     const value = event.target.value;
     setLines((current) =>
-      current.map((line) => (line.key === key ? { ...line, [field]: value } : line))
+      current.map((line) => (line.key === key ? { ...line, quantity: value } : line))
     );
     if (error) {
       setError('');
     }
-    if (field === 'drugId') {
-      loadBatches(value);
-    }
   };
 
-  const addLine = () => setLines((current) => [...current, emptyLine()]);
+  const removeLine = (key) => setLines((current) => current.filter((line) => line.key !== key));
 
-  const removeLine = (key) =>
-    setLines((current) => (current.length === 1 ? current : current.filter((line) => line.key !== key)));
+  const clearAll = () => {
+    setLines([]);
+    clearPick();
+  };
 
-  const drugById = (drugId) => drugs.find((drug) => drug.id === drugId);
+  const dismissResult = useCallback(() => setResult(null), []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    const validLines = lines.filter((line) => line.drugId);
-    if (validLines.length === 0) {
-      setError('Choose at least one drug to dispense.');
+    if (lines.length === 0) {
+      setError('Add at least one drug to dispense.');
       return;
     }
 
-    const invalid = validLines.find((line) => !(Number(line.quantity) > 0));
+    const invalid = lines.find((line) => !(Number(line.quantity) > 0));
     if (invalid) {
-      setError('Every selected drug needs a quantity greater than zero.');
+      setError(
+        `Every drug needs a quantity greater than zero. Check ${drugById(invalid.drugId)?.name}.`
+      );
+      return;
+    }
+
+    const drugIds = lines.map((line) => line.drugId);
+    if (new Set(drugIds).size !== drugIds.length) {
+      setError('The same drug cannot be on more than one line. Keep one line per drug.');
       return;
     }
 
@@ -127,13 +195,13 @@ export default function DispensingPage() {
       const response = await dispense({
         reference: reference.trim() || null,
         note: note.trim() || null,
-        items: validLines.map((line) => ({
+        items: lines.map((line) => ({
           drugId: line.drugId,
           quantity: Number(line.quantity)
         }))
       });
       setResult(response);
-      setLines([emptyLine()]);
+      setLines([]);
       setReference('');
       setNote('');
       setBatchesByDrug({});
@@ -168,7 +236,7 @@ export default function DispensingPage() {
 
       {error ? <Alert tone="error">{error}</Alert> : null}
 
-      {result ? <DispenseResult result={result} onDismiss={() => setResult(null)} /> : null}
+      {result ? <DispenseResult result={result} onDismiss={dismissResult} /> : null}
 
       {canDispense ? (
         <form onSubmit={handleSubmit} className="surface space-y-4 p-4 sm:p-5">
@@ -189,74 +257,164 @@ export default function DispensingPage() {
             />
           </div>
 
-          <div className="space-y-3">
-            {lines.map((line, index) => {
-              const drug = drugById(line.drugId);
-              return (
-                <div key={line.key} className="rounded-xl border border-sand-200 bg-sand-50/60 p-3">
-                  <div className="flex items-center justify-between pb-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-primary-500">
-                      Line {index + 1}
-                    </p>
-                    {lines.length > 1 ? (
+          <div className="space-y-3 rounded-xl border border-sand-200 bg-sand-50/60 p-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-primary-900">Add a drug</h3>
+              <span className="text-xs text-primary-500">{drugs.length} active drugs</span>
+            </div>
+
+            <div className="relative">
+              <label className="field-label" htmlFor="dispense-drug-search">
+                Drug
+              </label>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-300"
+                  aria-hidden="true"
+                />
+                <input
+                  id="dispense-drug-search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPickedDrugId('');
+                    setFieldError('');
+                    if (error) {
+                      setError('');
+                    }
+                  }}
+                  placeholder="Type a drug name or code"
+                  autoComplete="off"
+                  className="field pl-9 pr-9"
+                />
+                {search ? (
+                  <button
+                    type="button"
+                    onClick={clearPick}
+                    aria-label="Clear drug"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-primary-400 transition hover:bg-primary-50"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+
+              {pickedDrug ? (
+                <p className="mt-1 text-[11px] font-semibold text-leaf-600">
+                  Selected: {pickedDrug.name} ({pickedDrug.code}) · {pickedDrug.unitOfMeasure}
+                </p>
+              ) : null}
+
+              {matches.length > 0 ? (
+                <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-sand-200 bg-white shadow-lg">
+                  {matches.map((drug) => (
+                    <li key={drug.id}>
                       <button
                         type="button"
-                        onClick={() => removeLine(line.key)}
-                        className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-semibold text-maroon-600 transition hover:bg-maroon-50"
+                        onClick={() => chooseDrug(drug)}
+                        className="w-full px-3 py-2 text-left text-sm text-primary-800 transition hover:bg-primary-50"
                       >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        Remove
+                        {drug.name} ({drug.code})
                       </button>
-                    ) : null}
-                  </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
 
-                  <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-                    <div>
-                      <label className="field-label" htmlFor={`dispense-drug-${line.key}`}>
-                        Drug
-                      </label>
-                      <select
-                        id={`dispense-drug-${line.key}`}
-                        value={line.drugId}
-                        onChange={updateLine(line.key, 'drugId')}
-                        className="field"
-                      >
-                        <option value="">Select a drug</option>
-                        {drugs.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.name} ({option.code}) — {option.unitOfMeasure}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+              {!pickedDrug && search.trim() && matches.length === 0 ? (
+                <p className="mt-1 text-[11px] text-primary-400">No drug matches that search.</p>
+              ) : null}
+            </div>
 
-                    <Input
-                      label={`Quantity${drug ? ` (${drug.unitOfMeasure})` : ''}`}
-                      name={`dispense-quantity-${line.key}`}
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={line.quantity}
-                      onChange={updateLine(line.key, 'quantity')}
-                      placeholder="0"
-                    />
-                  </div>
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <Input
+                label={`Quantity${pickedDrug ? ` (${pickedDrug.unitOfMeasure})` : ''}`}
+                name="dispense-quantity"
+                type="number"
+                min="0"
+                step="any"
+                value={quantity}
+                onChange={(event) => {
+                  setQuantity(event.target.value);
+                  setFieldError('');
+                }}
+                placeholder="0"
+                disabled={!pickedDrug}
+              />
+              <div className="flex items-end">
+                <Button type="button" variant="accent" onClick={addLine} className="w-full">
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Add
+                </Button>
+              </div>
+            </div>
 
-                  {line.drugId ? (
-                    <AllocationPreview
-                      batches={batchesByDrug[line.drugId]}
-                      quantity={line.quantity}
-                      unit={drug?.unitOfMeasure || 'units'}
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
+            {pickedDrug ? (
+              <AllocationPreview
+                batches={batchesByDrug[pickedDrug.id]}
+                quantity={quantity}
+                unit={pickedDrug.unitOfMeasure || 'units'}
+              />
+            ) : null}
 
-            <Button type="button" variant="outline" size="sm" onClick={addLine}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Add another drug
-            </Button>
+            {fieldError ? (
+              <p className="text-xs font-medium text-maroon-600">{fieldError}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-primary-900">
+              Drugs added {lines.length > 0 ? `(${lines.length})` : ''}
+            </h3>
+
+            {lines.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-sand-300 px-3 py-6 text-center text-xs text-primary-400">
+                Nothing added yet. Search above, enter a quantity and tap Add. Each drug gets one
+                line.
+              </p>
+            ) : (
+              <ul className="divide-y divide-sand-100 rounded-xl border border-sand-200 bg-white">
+                {lines.map((line) => {
+                  const drug = drugById(line.drugId);
+                  return (
+                    <li key={line.key} className="px-3 py-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-primary-800">{drug?.name}</p>
+                          <p className="text-[11px] text-primary-400">
+                            {drug?.code} · {drug?.unitOfMeasure}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={line.quantity}
+                            onChange={updateLineQuantity(line.key)}
+                            aria-label={`Quantity for ${drug?.name}`}
+                            className="field w-24"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeLine(line.key)}
+                            aria-label={`Remove ${drug?.name}`}
+                            className="rounded-lg p-1.5 text-maroon-600 transition hover:bg-maroon-50"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                      <AllocationPreview
+                        batches={batchesByDrug[line.drugId]}
+                        quantity={line.quantity}
+                        unit={drug?.unitOfMeasure || 'units'}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 border-t border-sand-200 pt-4 sm:flex-row-reverse">
@@ -264,7 +422,7 @@ export default function DispensingPage() {
               <HandHeart className="h-4 w-4" aria-hidden="true" />
               {submitting ? 'Dispensing' : 'Dispense'}
             </Button>
-            <Button type="button" variant="outline" onClick={() => setLines([emptyLine()])}>
+            <Button type="button" variant="outline" onClick={clearAll}>
               Clear
             </Button>
           </div>

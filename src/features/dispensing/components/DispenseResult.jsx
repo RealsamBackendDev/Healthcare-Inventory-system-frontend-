@@ -1,7 +1,20 @@
+import { useEffect } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { formatDate, formatQuantity } from '../../../utils/format.js';
 
+const AUTO_DISMISS_MS = 7000;
+
 export default function DispenseResult({ result, onDismiss }) {
+  useEffect(() => {
+    if (!result) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      onDismiss();
+    }, AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [result, onDismiss]);
+
   if (!result) {
     return null;
   }
@@ -21,6 +34,7 @@ export default function DispenseResult({ result, onDismiss }) {
             {result.allocations.length === 1 ? '' : 's'} · recorded by{' '}
             {result.dispensing.createdByName}
           </p>
+          <p className="text-[11px] text-primary-400">Closes on its own in a few seconds.</p>
         </div>
         <button
           type="button"

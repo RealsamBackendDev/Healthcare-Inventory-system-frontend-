@@ -95,7 +95,7 @@ export default function BatchActionDrawer({ open, onClose, batch, onDone }) {
           items: [{ batchId: batch.id, quantity: amount, disposition: action }]
         });
         onDone(
-          `Return request ${result.returnRequest.requestNumber} created and waiting for approval.`
+          `Return request ${result.returnRequest.requestNumber} created. Approve it under Adjustments then Returns to take the stock off this batch.`
         );
       }
     } catch (submitError) {
