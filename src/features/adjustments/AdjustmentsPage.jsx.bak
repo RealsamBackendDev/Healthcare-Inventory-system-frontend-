@@ -1,0 +1,522 @@
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ClipboardCheck,
+  Layers,
+  RefreshCw,
+  RotateCcw,
+  SlidersHorizontal
+} from 'lucide-react';
+import Alert from '../../components/ui/Alert.jsx';
+import Button from '../../components/ui/Button.jsx';
+import StatusPill from './components/StatusPill.jsx';
+import AdjustmentFormDrawer from './components/AdjustmentFormDrawer.jsx';
+import BulkAdjustmentDrawer from './components/BulkAdjustmentDrawer.jsx';
+import ReturnFormDrawer from './components/ReturnFormDrawer.jsx';
+import {
+  approveAdjustment,
+  approveAdjustmentGroup,
+  approveReturn,
+  listAdjustments,
+  listReturns,
+  rejectAdjustment,
+  rejectAdjustmentGroup,
+  rejectReturn
+} from '../../services/adjustments.service.js';
+import { useAuth } from '../../hooks/useAuth.js';
+import { PERMISSIONS } from '../../utils/permissions.js';
+import {
+  formatCurrency,
+  formatDateTime,
+  formatQuantity,
+  titleCase
+} from '../../utils/format.js';
+
+const PAGE_SIZE = 20;
+
+const filters = [
+  { value: '', label: 'All' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' }
+];
+
+const ReviewButtons = ({ onApprove, onReject, canApprove }) => (
+  <div className="mt-2 flex gap-2">
+    {canApprove ? (
+      <button
+        type="button"
+        onClick={onApprove}
+        className="rounded-lg bg-primary-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-primary-700"
+      >
+        Approve
+      </button>
+    ) : null}
+    <button
+      type="button"
+      onClick={onReject}
+      className="rounded-lg border border-maroon-200 px-2.5 py-1 text-[11px] font-semibold text-maroon-600 transition hover:bg-maroon-50"
+    >
+      Reject
+    </button>
+  </div>
+);
+
+export default function AdjustmentsPage() {
+  const navigate = useNavigate();
+  const { user, hasPermission } = useAuth();
+  const canCreateAdjustment = hasPermission(PERMISSIONS.ADJUSTMENTS_CREATE);
+  const canAdjustQuantity = hasPermission(PERMISSIONS.ADJUSTMENTS_QUANTITY);
+  const canApproveAdjustment = hasPermission(PERMISSIONS.ADJUSTMENTS_APPROVE);
+  const canCreateReturn = hasPermission(PERMISSIONS.RETURNS_REQUEST);
+  const canApproveReturn = hasPermission(PERMISSIONS.RETURNS_APPROVE);
+
+  const [tab, setTab] = useState('adjustments');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [adjustmentDrawer, setAdjustmentDrawer] = useState(false);
+  const [bulkDrawer, setBulkDrawer] = useState(false);
+  const [returnDrawer, setReturnDrawer] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = { status: status || undefined, page, pageSize: PAGE_SIZE };
+      const result = tab === 'adjustments' ? await listAdjustments(params) : await listReturns(params);
+      setData(result);
+    } catch (loadError) {
+      setError(loadError.message || 'Records could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  }, [tab, status, page]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+    setData(null);
+    setNotice('');
+  }, [tab, status]);
+
+  const handleReview = async (kind, record, action) => {
+    const isGroup = kind === 'group';
+    const busyKey = isGroup ? record.groupId : record.id;
+    const label = isGroup ? 'stock quantity adjustment' : kind === 'adjustment' ? 'adjustment' : 'return';
+    let comment = null;
+
+    if (action === 'reject') {
+      const input = window.prompt('Reason for rejection (at least 3 characters)');
+      if (!input || input.trim().length < 3) {
+        return;
+      }
+      comment = input.trim();
+    } else if (
+      !window.confirm(
+        isGroup
+          ? 'Approve this stock quantity adjustment? Stock for every line will be updated.'
+          : kind === 'adjustment'
+            ? 'Approve this adjustment? Batch stock will be updated.'
+            : 'Approve this return? Batch status and stock will be updated.'
+      )
+    ) {
+      return;
+    }
+
+    setBusyId(busyKey);
+    setError('');
+    setNotice('');
+    try {
+      if (isGroup) {
+        if (action === 'approve') {
+          await approveAdjustmentGroup(record.groupId);
+        } else {
+          await rejectAdjustmentGroup(record.groupId, comment);
+        }
+      } else if (kind === 'adjustment') {
+        if (action === 'approve') {
+          await approveAdjustment(record.id);
+        } else {
+          await rejectAdjustment(record.id, comment);
+        }
+      } else if (action === 'approve') {
+        await approveReturn(record.id);
+      } else {
+        await rejectReturn(record.id, comment);
+      }
+      setNotice(`${label} ${action === 'approve' ? 'approved' : 'rejected'}.`);
+      load();
+    } catch (reviewError) {
+      setError(reviewError.message || 'The review could not be saved.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const records = data?.items || [];
+  const entries = records.reduce(
+    (accumulator, record) => {
+      if (!record.groupId) {
+        accumulator.list.push({ key: record.id, group: false, record });
+        return accumulator;
+      }
+      let entry = accumulator.groups.get(record.groupId);
+      if (!entry) {
+        entry = { key: `group-${record.groupId}`, group: true, groupId: record.groupId, items: [] };
+        accumulator.groups.set(record.groupId, entry);
+        accumulator.list.push(entry);
+      }
+      entry.items.push(record);
+      return accumulator;
+    },
+    { list: [], groups: new Map() }
+  ).list;
+  const pagination = data?.pagination;
+  const canApprove = tab === 'adjustments' ? canApproveAdjustment : canApproveReturn;
+  const canCreate = tab === 'adjustments' ? canAdjustQuantity : canCreateReturn;
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-maroon-500">
+            Stock corrections
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-primary-900">
+            Adjustments and returns
+          </h1>
+          <p className="mt-1 text-sm text-primary-600">
+            Corrections above threshold wait here for an administrator.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={load} loading={loading}>
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Refresh
+          </Button>
+          {canCreateAdjustment ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/adjustments/stock-count')}
+            >
+              <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+              Stock count
+            </Button>
+          ) : null}
+          {tab === 'adjustments' && canAdjustQuantity ? (
+            <Button variant="outline" size="sm" onClick={() => setBulkDrawer(true)}>
+              <Layers className="h-4 w-4" aria-hidden="true" />
+              Stock quantity adjustment
+            </Button>
+          ) : null}
+          {canCreate ? (
+            <Button
+              size="sm"
+              onClick={() => (tab === 'adjustments' ? setAdjustmentDrawer(true) : setReturnDrawer(true))}
+            >
+              {tab === 'adjustments' ? (
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              )}
+              {tab === 'adjustments' ? 'New adjustment' : 'New return'}
+            </Button>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="flex gap-1 rounded-xl bg-sand-100 p-1">
+        {[
+          { value: 'adjustments', label: 'Adjustments' },
+          { value: 'returns', label: 'Returns' }
+        ].map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setTab(option.value)}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+              tab === option.value
+                ? 'bg-white text-primary-900 shadow-sm'
+                : 'text-primary-600 hover:text-primary-900'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
+
+      <div className="surface">
+        <div className="flex flex-wrap gap-1 border-b border-sand-200 p-3 sm:px-5">
+          {filters.map((filter) => (
+            <button
+              key={filter.value || 'all'}
+              type="button"
+              onClick={() => setStatus(filter.value)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                status === filter.value
+                  ? 'bg-primary-50 text-primary-900'
+                  : 'text-primary-600 hover:text-primary-900'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+
+        {loading && records.length === 0 ? (
+          <div className="divide-y divide-sand-100">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="px-4 py-4 sm:px-5">
+                <div className="h-4 w-1/2 animate-pulse rounded bg-sand-200" />
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {!loading && records.length === 0 ? (
+          <p className="px-4 py-14 text-center text-sm text-primary-500 sm:px-5">
+            Nothing to show for this filter.
+          </p>
+        ) : null}
+
+        <ul className="divide-y divide-sand-100">
+          {entries.map((entry) => {
+            if (entry.group) {
+              const items = entry.items;
+              const pendingGroup = items.some((item) => item.status === 'pending');
+              const ownGroup = items.some(
+                (item) => item.requestedBy && item.requestedBy === user?.id
+              );
+              const groupStatus = items[0].status;
+              return (
+                <li key={entry.key} className="px-4 py-3 sm:px-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-primary-900">
+                        Stock quantity adjustment · {items.length} line{items.length === 1 ? '' : 's'}
+                      </p>
+                      <p className="truncate text-xs text-primary-500">
+                        {titleCase(items[0].adjustmentType)} · {items[0].reason}
+                      </p>
+                      <p className="text-[11px] text-primary-400">
+                        {items[0].requestedByName} · {formatDateTime(items[0].createdAt)}
+                        {items[0].reviewedByName
+                          ? ` · reviewed by ${items[0].reviewedByName}`
+                          : ''}
+                      </p>
+                      <ul className="mt-2 space-y-1 rounded-xl border border-sand-200 bg-sand-50/70 px-2.5 py-2">
+                        {items.map((item) => (
+                          <li
+                            key={item.id}
+                            className="flex items-center justify-between gap-2 text-xs"
+                          >
+                            <span className="min-w-0 truncate text-primary-800">
+                              {item.drugName}{' '}
+                              <span className="text-primary-400">({item.batchNumber})</span>
+                            </span>
+                            <span
+                              className={`shrink-0 font-semibold ${
+                                Number(item.quantity) < 0 ? 'text-maroon-600' : 'text-leaf-600'
+                              }`}
+                            >
+                              {Number(item.quantity) > 0 ? '+' : ''}
+                              {formatQuantity(item.quantity)} {item.unitOfMeasure}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {items[0].reviewComment ? (
+                        <p className="mt-1 text-[11px] text-primary-500">
+                          Comment: {items[0].reviewComment}
+                        </p>
+                      ) : null}
+                      {pendingGroup && canApprove ? (
+                        <ReviewButtons
+                          canApprove={!ownGroup}
+                          onApprove={() => handleReview('group', entry, 'approve')}
+                          onReject={() => handleReview('group', entry, 'reject')}
+                        />
+                      ) : null}
+                      {pendingGroup && canApprove && ownGroup ? (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          You raised this, so another administrator has to approve it.
+                        </p>
+                      ) : null}
+                      {busyId === entry.groupId ? (
+                        <p className="mt-1 text-[11px] font-medium text-primary-500">Working…</p>
+                      ) : null}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <StatusPill status={groupStatus} />
+                      <p className="mt-1 text-sm font-bold text-primary-900">
+                        {items.length} line{items.length === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              );
+            }
+
+            const record = entry.record;
+            const isAdjustment = tab === 'adjustments';
+            const pending = record.status === 'pending';
+            const isOwnRecord = Boolean(record.requestedBy) && record.requestedBy === user?.id;
+            return (
+              <li key={record.id} className="px-4 py-3 sm:px-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-primary-900">
+                      {isAdjustment
+                        ? `${record.drugName} (${record.batchNumber})`
+                        : record.requestNumber}
+                    </p>
+                    <p className="truncate text-xs text-primary-500">
+                      {isAdjustment
+                        ? `${titleCase(record.adjustmentType)} · ${record.reason}`
+                        : `${record.itemCount} item${record.itemCount === 1 ? '' : 's'} · ${
+                            record.reason
+                          }`}
+                    </p>
+                    <p className="text-[11px] text-primary-400">
+                      {record.requestedByName} · {formatDateTime(record.createdAt)}
+                      {record.reviewedByName ? ` · reviewed by ${record.reviewedByName}` : ''}
+                    </p>
+                    {record.reviewComment ? (
+                      <p className="mt-0.5 text-[11px] text-primary-500">
+                        Comment: {record.reviewComment}
+                      </p>
+                    ) : null}
+                                        {pending && canApprove ? (
+                      <ReviewButtons
+                        canApprove={isAdjustment ? !isOwnRecord : true}
+                        onApprove={() =>
+                          handleReview(isAdjustment ? 'adjustment' : 'return', record, 'approve')
+                        }
+                        onReject={() =>
+                          handleReview(isAdjustment ? 'adjustment' : 'return', record, 'reject')
+                        }
+                      />
+                    ) : null}
+                    {pending && canApprove && isAdjustment && isOwnRecord ? (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        You raised this, so another administrator has to approve it.
+                      </p>
+                    ) : null}
+                    {busyId === record.id ? (
+                      <p className="mt-1 text-[11px] font-medium text-primary-500">Working…</p>
+                    ) : null}
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <StatusPill status={record.status} />
+                    <p
+                      className={`mt-1 text-sm font-bold ${
+                        isAdjustment && Number(record.quantity) < 0
+                          ? 'text-maroon-600'
+                          : 'text-primary-900'
+                      }`}
+                    >
+                      {isAdjustment
+                        ? `${Number(record.quantity) > 0 ? '+' : ''}${formatQuantity(
+                            record.quantity
+                          )} ${record.unitOfMeasure}`
+                        : formatQuantity(record.totalQuantity)}
+                    </p>
+                    {isAdjustment && record.valueImpact !== null ? (
+                      <p className="text-[11px] text-primary-500">
+                        {formatCurrency(record.valueImpact)}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        {pagination && pagination.total > 0 ? (
+          <div className="flex items-center justify-between border-t border-sand-200 px-4 py-3 sm:px-5">
+            <p className="text-xs text-primary-500">
+              Page {pagination.page} of {pagination.totalPages || 1} ·{' '}
+              {formatQuantity(pagination.total)} records
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={pagination.page <= 1 || loading}
+                className="inline-flex items-center gap-1 rounded-lg border border-sand-300 px-2.5 py-1.5 text-xs font-semibold text-primary-700 transition hover:bg-primary-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((current) => Math.min(pagination.totalPages || 1, current + 1))
+                }
+                disabled={pagination.page >= pagination.totalPages || loading}
+                className="inline-flex items-center gap-1 rounded-lg border border-sand-300 px-2.5 py-1.5 text-xs font-semibold text-primary-700 transition hover:bg-primary-50 disabled:opacity-40"
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <AdjustmentFormDrawer
+        open={adjustmentDrawer}
+        onClose={() => setAdjustmentDrawer(false)}
+        onSaved={(result) => {
+          setAdjustmentDrawer(false);
+          setNotice(
+            result.requiresApproval
+              ? 'Adjustment submitted and waiting for an administrator.'
+              : 'Adjustment applied to stock.'
+          );
+          load();
+        }}
+      />
+
+      <BulkAdjustmentDrawer
+        open={bulkDrawer}
+        onClose={() => setBulkDrawer(false)}
+        onSaved={(result) => {
+          setBulkDrawer(false);
+          setNotice(
+            result.requiresApproval
+              ? `Stock quantity adjustment with ${result.summary.lines} line(s) submitted and waiting for an administrator.`
+              : `Stock quantity adjustment applied to ${result.summary.lines} line(s).`
+          );
+          load();
+        }}
+      />
+
+      <ReturnFormDrawer
+        open={returnDrawer}
+        onClose={() => setReturnDrawer(false)}
+        onSaved={(result) => {
+          setReturnDrawer(false);
+          setNotice(`Return request ${result.returnRequest.requestNumber} submitted for approval.`);
+          load();
+        }}
+      />
+    </div>
+  );
+}

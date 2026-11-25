@@ -11,12 +11,7 @@ import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import ExpiryBadge from './components/ExpiryBadge.jsx';
 import BatchActionDrawer from './components/BatchActionDrawer.jsx';
-import {
-  getExpired,
-  getExpirySummary,
-  getNearExpiry,
-  refreshExpiry
-} from '../../services/expiry.service.js';
+import { getExpired, getExpirySummary, getNearExpiry, refreshExpiry } from '../../services/expiry.service.js';
 import { listBatches } from '../../services/inventory.service.js';
 import { useAuth } from '../../hooks/useAuth.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
@@ -62,7 +57,7 @@ const SummaryTile = ({ label, value, hint, tone = 'primary', onClick }) => (
 
 export default function ExpiryPage() {
   const { hasPermission } = useAuth();
-  const canWriteOff = hasPermission(PERMISSIONS.ADJUSTMENTS_CREATE);
+  const canWriteOff = hasPermission(PERMISSIONS.ADJUSTMENTS_QUANTITY);
   const canReturn = hasPermission(PERMISSIONS.RETURNS_REQUEST);
   const isAdmin = hasPermission(PERMISSIONS.SETTINGS_MANAGE);
 
@@ -107,9 +102,7 @@ export default function ExpiryPage() {
         const merged = results.flatMap((result) => result.items || []);
         merged.sort((left, right) => {
           const a = left.expiryDate ? new Date(left.expiryDate).getTime() : Number.MAX_SAFE_INTEGER;
-          const b = right.expiryDate
-            ? new Date(right.expiryDate).getTime()
-            : Number.MAX_SAFE_INTEGER;
+          const b = right.expiryDate ? new Date(right.expiryDate).getTime() : Number.MAX_SAFE_INTEGER;
           return a - b;
         });
         setOnHold(merged);
@@ -206,7 +199,7 @@ export default function ExpiryPage() {
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryTile
           label="Expired"
-          value={summary ? formatQuantity(summary.expiredQuantity) : '¡ª'}
+          value={summary ? formatQuantity(summary.expiredQuantity) : 'â€”'}
           hint={summary ? `${summary.expiredBatches} batch(es)` : 'Loading'}
           tone="maroon"
           onClick={() => {
@@ -216,7 +209,7 @@ export default function ExpiryPage() {
         />
         <SummaryTile
           label="Within 7 days"
-          value={summary ? summary.within7Days : '¡ª'}
+          value={summary ? summary.within7Days : 'â€”'}
           hint="batches"
           tone="maroon"
           onClick={() => {
@@ -226,7 +219,7 @@ export default function ExpiryPage() {
         />
         <SummaryTile
           label="Within 30 days"
-          value={summary ? summary.within30Days : '¡ª'}
+          value={summary ? summary.within30Days : 'â€”'}
           hint="batches"
           onClick={() => {
             setTab('expiring');
@@ -235,7 +228,7 @@ export default function ExpiryPage() {
         />
         <SummaryTile
           label="Within 90 days"
-          value={summary ? summary.within90Days : '¡ª'}
+          value={summary ? summary.within90Days : 'â€”'}
           hint="batches"
           onClick={() => {
             setTab('expiring');
@@ -339,7 +332,7 @@ export default function ExpiryPage() {
                     {batch.drugName}
                   </p>
                   <p className="truncate text-xs text-primary-500">
-                    {batch.batchNumber} ¡¤ {batch.drugCode} ¡¤ expires {formatDate(batch.expiryDate)}
+                    {batch.batchNumber} Â· {batch.drugCode} Â· expires {formatDate(batch.expiryDate)}
                   </p>
                   <p className="mt-1 text-[11px] font-medium text-primary-600">
                     {formatQuantity(batch.quantity)} {batch.unitOfMeasure} available
@@ -380,7 +373,7 @@ export default function ExpiryPage() {
                     {batch.drugName}
                   </p>
                   <p className="truncate text-xs text-primary-500">
-                    {batch.batchNumber} ¡¤ {batch.drugCode} ¡¤ expires {formatDate(batch.expiryDate)}
+                    {batch.batchNumber} Â· {batch.drugCode} Â· expires {formatDate(batch.expiryDate)}
                   </p>
                   <p className="mt-1 text-[11px] font-medium text-primary-600">
                     {formatQuantity(batch.quantity)} {batch.unitOfMeasure} held
@@ -411,7 +404,7 @@ export default function ExpiryPage() {
         {!loading && tab !== 'on_hold' && pagination && pagination.total > 0 ? (
           <div className="flex items-center justify-between border-t border-sand-200 px-4 py-3 sm:px-5">
             <p className="text-xs text-primary-500">
-              Page {pagination.page} of {pagination.totalPages || 1} ¡¤{' '}
+              Page {pagination.page} of {pagination.totalPages || 1} Â·{' '}
               {formatQuantity(pagination.total)} batches
             </p>
             <div className="flex items-center gap-2">
@@ -443,8 +436,8 @@ export default function ExpiryPage() {
       {summary && summary.within7Days > 0 ? (
         <p className="flex items-start gap-2 rounded-xl bg-maroon-50 px-3 py-2.5 text-xs text-maroon-700">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          {summary.within7Days} batch(es) expire within a week. Dispensing already uses the earliest
-          expiry first, so move or write off these batches before they are wasted.
+          {summary.within7Days} batch(es) expire within a week. Dispensing already uses the
+          earliest expiry first, so move or write off these batches before they are wasted.
         </p>
       ) : null}
 

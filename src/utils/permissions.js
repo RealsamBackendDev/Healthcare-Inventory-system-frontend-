@@ -7,6 +7,7 @@ export const PERMISSIONS = {
   STOCK_DISPENSE: 'stock.dispense',
   STOCK_IMPORT: 'stock.import',
   ADJUSTMENTS_CREATE: 'adjustments.create',
+  ADJUSTMENTS_QUANTITY: 'adjustments.quantity',
   ADJUSTMENTS_APPROVE: 'adjustments.approve',
   RETURNS_REQUEST: 'returns.request',
   RETURNS_APPROVE: 'returns.approve',

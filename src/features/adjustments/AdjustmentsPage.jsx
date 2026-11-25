@@ -2,23 +2,25 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
-    ChevronRight,
-      ClipboardCheck,
-        RefreshCw,
-          RotateCcw,
-            SlidersHorizontal
-            } from 'lucide-react';
+  ChevronRight,
+  ClipboardCheck,
+  Layers,
+  RefreshCw,
+  RotateCcw
+} from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import StatusPill from './components/StatusPill.jsx';
-import AdjustmentFormDrawer from './components/AdjustmentFormDrawer.jsx';
+import BulkAdjustmentDrawer from './components/BulkAdjustmentDrawer.jsx';
 import ReturnFormDrawer from './components/ReturnFormDrawer.jsx';
 import {
   approveAdjustment,
+  approveAdjustmentGroup,
   approveReturn,
   listAdjustments,
   listReturns,
   rejectAdjustment,
+  rejectAdjustmentGroup,
   rejectReturn
 } from '../../services/adjustments.service.js';
 import { useAuth } from '../../hooks/useAuth.js';
@@ -39,15 +41,17 @@ const filters = [
   { value: 'rejected', label: 'Rejected' }
 ];
 
-const ReviewButtons = ({ onApprove, onReject }) => (
+const ReviewButtons = ({ onApprove, onReject, canApprove }) => (
   <div className="mt-2 flex gap-2">
-    <button
-      type="button"
-      onClick={onApprove}
-      className="rounded-lg bg-primary-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-primary-700"
-    >
-      Approve
-    </button>
+    {canApprove ? (
+      <button
+        type="button"
+        onClick={onApprove}
+        className="rounded-lg bg-primary-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-primary-700"
+      >
+        Approve
+      </button>
+    ) : null}
     <button
       type="button"
       onClick={onReject}
@@ -60,8 +64,9 @@ const ReviewButtons = ({ onApprove, onReject }) => (
 
 export default function AdjustmentsPage() {
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canCreateAdjustment = hasPermission(PERMISSIONS.ADJUSTMENTS_CREATE);
+  const canAdjustQuantity = hasPermission(PERMISSIONS.ADJUSTMENTS_QUANTITY);
   const canApproveAdjustment = hasPermission(PERMISSIONS.ADJUSTMENTS_APPROVE);
   const canCreateReturn = hasPermission(PERMISSIONS.RETURNS_REQUEST);
   const canApproveReturn = hasPermission(PERMISSIONS.RETURNS_APPROVE);
@@ -73,7 +78,7 @@ export default function AdjustmentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [adjustmentDrawer, setAdjustmentDrawer] = useState(false);
+  const [bulkDrawer, setBulkDrawer] = useState(false);
   const [returnDrawer, setReturnDrawer] = useState(false);
   const [busyId, setBusyId] = useState(null);
 
@@ -102,6 +107,9 @@ export default function AdjustmentsPage() {
   }, [tab, status]);
 
   const handleReview = async (kind, record, action) => {
+    const isGroup = kind === 'group';
+    const busyKey = isGroup ? record.groupId : record.id;
+    const label = isGroup ? 'stock quantity adjustment' : kind === 'adjustment' ? 'adjustment' : 'return';
     let comment = null;
 
     if (action === 'reject') {
@@ -112,19 +120,27 @@ export default function AdjustmentsPage() {
       comment = input.trim();
     } else if (
       !window.confirm(
-        kind === 'adjustment'
-          ? 'Approve this adjustment? Batch stock will be updated.'
-          : 'Approve this return? Batch status and stock will be updated.'
+        isGroup
+          ? 'Approve this stock quantity adjustment? Stock for every line will be updated.'
+          : kind === 'adjustment'
+            ? 'Approve this adjustment? Batch stock will be updated.'
+            : 'Approve this return? Batch status and stock will be updated.'
       )
     ) {
       return;
     }
 
-    setBusyId(record.id);
+    setBusyId(busyKey);
     setError('');
     setNotice('');
     try {
-      if (kind === 'adjustment') {
+      if (isGroup) {
+        if (action === 'approve') {
+          await approveAdjustmentGroup(record.groupId);
+        } else {
+          await rejectAdjustmentGroup(record.groupId, comment);
+        }
+      } else if (kind === 'adjustment') {
         if (action === 'approve') {
           await approveAdjustment(record.id);
         } else {
@@ -135,7 +151,7 @@ export default function AdjustmentsPage() {
       } else {
         await rejectReturn(record.id, comment);
       }
-      setNotice(`${kind === 'adjustment' ? 'Adjustment' : 'Return'} ${action}d.`);
+      setNotice(`${label} ${action === 'approve' ? 'approved' : 'rejected'}.`);
       load();
     } catch (reviewError) {
       setError(reviewError.message || 'The review could not be saved.');
@@ -145,9 +161,25 @@ export default function AdjustmentsPage() {
   };
 
   const records = data?.items || [];
+  const entries = records.reduce(
+    (accumulator, record) => {
+      if (!record.groupId) {
+        accumulator.list.push({ key: record.id, group: false, record });
+        return accumulator;
+      }
+      let entry = accumulator.groups.get(record.groupId);
+      if (!entry) {
+        entry = { key: `group-${record.groupId}`, group: true, groupId: record.groupId, items: [] };
+        accumulator.groups.set(record.groupId, entry);
+        accumulator.list.push(entry);
+      }
+      entry.items.push(record);
+      return accumulator;
+    },
+    { list: [], groups: new Map() }
+  ).list;
   const pagination = data?.pagination;
   const canApprove = tab === 'adjustments' ? canApproveAdjustment : canApproveReturn;
-  const canCreate = tab === 'adjustments' ? canCreateAdjustment : canCreateReturn;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -164,20 +196,32 @@ export default function AdjustmentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm" onClick={load} loading={loading}>
-                                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                                              Refresh
-                                                        </Button>
-                                                                  {canCreateAdjustment ? (
-                                                                              <Button
-                                                                                            variant="outline"
-                                                                                                          size="sm"
-                                                                                                                        onClick={() => navigate('/adjustments/stock-count')}
-                                                                                                                                    >
-                                                                                                                                                  <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
-                                                                                                                                                                Stock count
-                                                                                                                                                                            </Button>
-                                                                                                                                                                                      ) : null}
+          <Button variant="outline" size="sm" onClick={load} loading={loading}>
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Refresh
+          </Button>
+          {canCreateAdjustment ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/adjustments/stock-count')}
+            >
+              <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+              Stock count
+            </Button>
+          ) : null}
+          {tab === 'adjustments' && canAdjustQuantity ? (
+            <Button variant="outline" size="sm" onClick={() => setBulkDrawer(true)}>
+              <Layers className="h-4 w-4" aria-hidden="true" />
+              Stock quantity adjustment
+            </Button>
+          ) : null}
+          {canCreateReturn ? (
+            <Button size="sm" onClick={() => setReturnDrawer(true)}>
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              New return
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -239,9 +283,87 @@ export default function AdjustmentsPage() {
         ) : null}
 
         <ul className="divide-y divide-sand-100">
-          {records.map((record) => {
+          {entries.map((entry) => {
+            if (entry.group) {
+              const items = entry.items;
+              const pendingGroup = items.some((item) => item.status === 'pending');
+              const ownGroup = items.some(
+                (item) => item.requestedBy && item.requestedBy === user?.id
+              );
+              const groupStatus = items[0].status;
+              return (
+                <li key={entry.key} className="px-4 py-3 sm:px-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-primary-900">
+                        Stock quantity adjustment · {items.length} line{items.length === 1 ? '' : 's'}
+                      </p>
+                      <p className="truncate text-xs text-primary-500">
+                        {titleCase(items[0].adjustmentType)} · {items[0].reason}
+                      </p>
+                      <p className="text-[11px] text-primary-400">
+                        {items[0].requestedByName} · {formatDateTime(items[0].createdAt)}
+                        {items[0].reviewedByName
+                          ? ` · reviewed by ${items[0].reviewedByName}`
+                          : ''}
+                      </p>
+                      <ul className="mt-2 space-y-1 rounded-xl border border-sand-200 bg-sand-50/70 px-2.5 py-2">
+                        {items.map((item) => (
+                          <li
+                            key={item.id}
+                            className="flex items-center justify-between gap-2 text-xs"
+                          >
+                            <span className="min-w-0 truncate text-primary-800">
+                              {item.drugName}{' '}
+                              <span className="text-primary-400">({item.batchNumber})</span>
+                            </span>
+                            <span
+                              className={`shrink-0 font-semibold ${
+                                Number(item.quantity) < 0 ? 'text-maroon-600' : 'text-leaf-600'
+                              }`}
+                            >
+                              {Number(item.quantity) > 0 ? '+' : ''}
+                              {formatQuantity(item.quantity)} {item.unitOfMeasure}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {items[0].reviewComment ? (
+                        <p className="mt-1 text-[11px] text-primary-500">
+                          Comment: {items[0].reviewComment}
+                        </p>
+                      ) : null}
+                      {pendingGroup && canApprove ? (
+                        <ReviewButtons
+                          canApprove={!ownGroup}
+                          onApprove={() => handleReview('group', entry, 'approve')}
+                          onReject={() => handleReview('group', entry, 'reject')}
+                        />
+                      ) : null}
+                      {pendingGroup && canApprove && ownGroup ? (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          You raised this, so another administrator has to approve it.
+                        </p>
+                      ) : null}
+                      {busyId === entry.groupId ? (
+                        <p className="mt-1 text-[11px] font-medium text-primary-500">Working…</p>
+                      ) : null}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <StatusPill status={groupStatus} />
+                      <p className="mt-1 text-sm font-bold text-primary-900">
+                        {items.length} line{items.length === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              );
+            }
+
+            const record = entry.record;
             const isAdjustment = tab === 'adjustments';
             const pending = record.status === 'pending';
+            const isOwnRecord = Boolean(record.requestedBy) && record.requestedBy === user?.id;
             return (
               <li key={record.id} className="px-4 py-3 sm:px-5">
                 <div className="flex items-start justify-between gap-3">
@@ -253,22 +375,23 @@ export default function AdjustmentsPage() {
                     </p>
                     <p className="truncate text-xs text-primary-500">
                       {isAdjustment
-                        ? `${titleCase(record.adjustmentType)} �� ${record.reason}`
-                        : `${record.itemCount} item${record.itemCount === 1 ? '' : 's'} �� ${
+                        ? `${titleCase(record.adjustmentType)} · ${record.reason}`
+                        : `${record.itemCount} item${record.itemCount === 1 ? '' : 's'} · ${
                             record.reason
                           }`}
                     </p>
                     <p className="text-[11px] text-primary-400">
-                      {record.requestedByName} �� {formatDateTime(record.createdAt)}
-                      {record.reviewedByName ? ` �� reviewed by ${record.reviewedByName}` : ''}
+                      {record.requestedByName} · {formatDateTime(record.createdAt)}
+                      {record.reviewedByName ? ` · reviewed by ${record.reviewedByName}` : ''}
                     </p>
                     {record.reviewComment ? (
                       <p className="mt-0.5 text-[11px] text-primary-500">
                         Comment: {record.reviewComment}
                       </p>
                     ) : null}
-                    {pending && canApprove ? (
+                                        {pending && canApprove ? (
                       <ReviewButtons
+                        canApprove={isAdjustment ? !isOwnRecord : true}
                         onApprove={() =>
                           handleReview(isAdjustment ? 'adjustment' : 'return', record, 'approve')
                         }
@@ -277,8 +400,13 @@ export default function AdjustmentsPage() {
                         }
                       />
                     ) : null}
+                    {pending && canApprove && isAdjustment && isOwnRecord ? (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        You raised this, so another administrator has to approve it.
+                      </p>
+                    ) : null}
                     {busyId === record.id ? (
-                      <p className="mt-1 text-[11px] font-medium text-primary-500">Working��</p>
+                      <p className="mt-1 text-[11px] font-medium text-primary-500">Working…</p>
                     ) : null}
                   </div>
 
@@ -312,7 +440,7 @@ export default function AdjustmentsPage() {
         {pagination && pagination.total > 0 ? (
           <div className="flex items-center justify-between border-t border-sand-200 px-4 py-3 sm:px-5">
             <p className="text-xs text-primary-500">
-              Page {pagination.page} of {pagination.totalPages || 1} ��{' '}
+              Page {pagination.page} of {pagination.totalPages || 1} ·{' '}
               {formatQuantity(pagination.total)} records
             </p>
             <div className="flex items-center gap-2">
@@ -341,15 +469,15 @@ export default function AdjustmentsPage() {
         ) : null}
       </div>
 
-      <AdjustmentFormDrawer
-        open={adjustmentDrawer}
-        onClose={() => setAdjustmentDrawer(false)}
+      <BulkAdjustmentDrawer
+        open={bulkDrawer}
+        onClose={() => setBulkDrawer(false)}
         onSaved={(result) => {
-          setAdjustmentDrawer(false);
+          setBulkDrawer(false);
           setNotice(
             result.requiresApproval
-              ? 'Adjustment submitted and waiting for an administrator.'
-              : 'Adjustment applied to stock.'
+              ? `Stock quantity adjustment with ${result.summary.lines} line(s) submitted and waiting for an administrator.`
+              : `Stock quantity adjustment applied to ${result.summary.lines} line(s).`
           );
           load();
         }}

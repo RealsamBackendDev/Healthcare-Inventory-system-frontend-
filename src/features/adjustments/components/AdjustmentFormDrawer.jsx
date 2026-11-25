@@ -22,6 +22,7 @@ const initialForm = {
   drugId: '',
   batchId: '',
   adjustmentType: 'physical_count',
+  direction: 'add',
   quantity: '',
   reason: '',
   reference: ''
@@ -75,6 +76,23 @@ export default function AdjustmentFormDrawer({ open, onClose, onSaved }) {
     }
   };
 
+  const chooseDirection = (direction) => {
+    setForm((current) => ({ ...current, direction }));
+    setErrors((current) => ({ ...current, quantity: undefined }));
+    if (error) {
+      setError('');
+    }
+  };
+
+  const updateQuantity = (event) => {
+    const cleaned = event.target.value.replace(/[^0-9.]/g, '');
+    setForm((current) => ({ ...current, quantity: cleaned }));
+    setErrors((current) => ({ ...current, quantity: undefined }));
+    if (error) {
+      setError('');
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -86,8 +104,8 @@ export default function AdjustmentFormDrawer({ open, onClose, onSaved }) {
       nextErrors.batchId = 'Choose a batch';
     }
     const quantity = Number(form.quantity);
-    if (!Number.isFinite(quantity) || quantity === 0) {
-      nextErrors.quantity = 'Enter a positive or negative quantity, not zero';
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      nextErrors.quantity = 'Enter a quantity greater than zero';
     }
     if (form.reason.trim().length < 3) {
       nextErrors.reason = 'A reason of at least 3 characters is required';
@@ -104,7 +122,7 @@ export default function AdjustmentFormDrawer({ open, onClose, onSaved }) {
         drugId: form.drugId,
         batchId: form.batchId,
         adjustmentType: form.adjustmentType,
-        quantity,
+        quantity: form.direction === 'reduce' ? -quantity : quantity,
         reason: form.reason.trim(),
         reference: form.reference.trim() || null
       });
@@ -117,13 +135,22 @@ export default function AdjustmentFormDrawer({ open, onClose, onSaved }) {
   };
 
   const selectedBatch = batches.find((batch) => batch.id === form.batchId);
+  const typedQuantity = Number(form.quantity);
+  const quantityHint = selectedBatch
+    ? Number.isFinite(typedQuantity) && typedQuantity > 0
+      ? `${formatQuantity(selectedBatch.quantity)} on hand → ${formatQuantity(
+          Number(selectedBatch.quantity) +
+            (form.direction === 'reduce' ? -typedQuantity : typedQuantity)
+        )} ${selectedBatch.unitOfMeasure} once applied`
+      : `On hand: ${formatQuantity(selectedBatch.quantity)} ${selectedBatch.unitOfMeasure}`
+    : undefined;
 
   return (
     <Drawer
       open={open}
       onClose={onClose}
       title="New stock adjustment"
-      subtitle="Use a negative quantity to reduce stock"
+      subtitle="Increase or reduce the stock in one batch"
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {error ? <Alert tone="error">{error}</Alert> : null}
@@ -171,6 +198,36 @@ export default function AdjustmentFormDrawer({ open, onClose, onSaved }) {
           ) : null}
         </div>
 
+        <div>
+          <span className="field-label">Change</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => chooseDirection('add')}
+              aria-pressed={form.direction === 'add'}
+              className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+                form.direction === 'add'
+                  ? 'border-leaf-600 bg-leaf-600 text-white'
+                  : 'border-sand-300 bg-white text-primary-700 hover:bg-primary-50'
+              }`}
+            >
+              Increase stock
+            </button>
+            <button
+              type="button"
+              onClick={() => chooseDirection('reduce')}
+              aria-pressed={form.direction === 'reduce'}
+              className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+                form.direction === 'reduce'
+                  ? 'border-maroon-600 bg-maroon-600 text-white'
+                  : 'border-sand-300 bg-white text-primary-700 hover:bg-primary-50'
+              }`}
+            >
+              Reduce stock
+            </button>
+          </div>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="field-label" htmlFor="adjustment-type">
@@ -193,16 +250,14 @@ export default function AdjustmentFormDrawer({ open, onClose, onSaved }) {
             label="Quantity"
             name="adjustmentQuantity"
             type="number"
+            inputMode="decimal"
+            min="0"
             step="any"
             value={form.quantity}
-            onChange={updateField('quantity')}
-            placeholder="-5 or 5"
+            onChange={updateQuantity}
+            placeholder="5"
             error={errors.quantity}
-            hint={
-              selectedBatch
-                ? `On hand: ${formatQuantity(selectedBatch.quantity)} ${selectedBatch.unitOfMeasure}`
-                : undefined
-            }
+            hint={quantityHint}
           />
         </div>
 
