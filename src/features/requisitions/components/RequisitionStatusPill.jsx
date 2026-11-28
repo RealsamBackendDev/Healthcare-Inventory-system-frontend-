@@ -1,5 +1,6 @@
 const styles = {
   draft: 'border-sand-300 bg-sand-100 text-primary-600',
+  pending_oic: 'border-amber-200 bg-amber-50 text-amber-700',
   pending_approval: 'border-amber-200 bg-amber-50 text-amber-700',
   approved: 'border-leaf-200 bg-leaf-50 text-primary-700',
   rejected: 'border-maroon-200 bg-maroon-50 text-maroon-600',
@@ -9,7 +10,8 @@ const styles = {
 
 const labels = {
   draft: 'Draft',
-  pending_approval: 'Pending approval',
+  pending_oic: 'Waiting for OIC approval',
+  pending_approval: 'Sent to Logistician',
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',

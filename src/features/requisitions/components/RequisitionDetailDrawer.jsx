@@ -1,10 +1,19 @@
-import { useState } from 'react';
-import { Check, ClipboardCheck, FilePenLine, Handshake, Pencil, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Check,
+  ClipboardCheck,
+  FilePenLine,
+  Handshake,
+  Pencil,
+  Plus,
+  Search,
+  Trash2
+} from 'lucide-react';
 import Alert from '../../../components/ui/Alert.jsx';
 import Button from '../../../components/ui/Button.jsx';
-import Input from '../../../components/ui/Input.jsx';
 import Drawer from '../../../components/ui/Drawer.jsx';
 import RequisitionStatusPill from './RequisitionStatusPill.jsx';
+import { listDrugs } from '../../../services/drugs.service.js';
 import { formatDate, formatDateTime, formatQuantity, titleCase } from '../../../utils/format.js';
 
 export default function RequisitionDetailDrawer({
@@ -23,18 +32,119 @@ export default function RequisitionDetailDrawer({
   const requisition = detail?.requisition;
   const items = detail?.items || [];
   const events = detail?.events || [];
-  const [suggestions, setSuggestions] = useState({});
 
   const isOwner = requisition ? requisition.createdBy === currentUserId : false;
   const status = requisition?.status;
-  const canEditDraft = status === 'draft' && (isOwner || canApprove);
+  const canEditDraft = status === 'draft' && isOwner;
   const canSubmit = status === 'draft' && (isOwner || canApprove);
-  const canReview = status === 'pending_approval' && canApprove;
-  const selfReviewBlocked = status === 'pending_approval' && canApprove && isOwner;
-  const canCancel = canCreate && ['draft', 'pending_approval'].includes(status) && (isOwner || canApprove);
+  const canReview = status === 'pending_oic' && canApprove;
+  const awaitingOic = status === 'pending_oic';
+  const awaitingLogistician = status === 'pending_approval';
+  const canCancel =
+    canCreate && ['draft', 'pending_oic', 'pending_approval'].includes(status) && (isOwner || canApprove);
   const canClose = status === 'approved' && canApprove;
   const canAmend = canCreate && ['approved', 'rejected'].includes(status);
   const showBalances = ['approved', 'closed'].includes(status);
+
+  const [reviewItems, setReviewItems] = useState([]);
+  const [drugs, setDrugs] = useState([]);
+  const [drugSearch, setDrugSearch] = useState('');
+  const [pickedDrug, setPickedDrug] = useState(null);
+  const [addQuantity, setAddQuantity] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    if (!requisition) {
+      setReviewItems([]);
+      return;
+    }
+    setReviewItems(
+      (detail?.items || []).map((item) => ({
+        drugId: item.drugId,
+        drugName: item.drugName,
+        drugCode: item.drugCode,
+        unitOfMeasure: item.unitOfMeasure,
+        quantity: String(Number(item.requestedQuantity))
+      }))
+    );
+    setDrugSearch('');
+    setPickedDrug(null);
+    setAddQuantity('');
+    setReviewError('');
+    setShowHistory(false);
+  }, [requisition?.id, requisition?.status]);
+
+  useEffect(() => {
+    if (!open || !canReview) {
+      return;
+    }
+    listDrugs({ status: 'active', pageSize: 100 })
+      .then((result) => setDrugs(result.items || []))
+      .catch(() => setDrugs([]));
+  }, [open, canReview]);
+
+  const drugMatches = useMemo(() => {
+    const term = drugSearch.trim().toLowerCase();
+    if (!term || pickedDrug) {
+      return [];
+    }
+    return drugs
+      .filter((drug) => !reviewItems.some((item) => item.drugId === drug.id))
+      .filter(
+        (drug) => drug.name.toLowerCase().includes(term) || drug.code.toLowerCase().includes(term)
+      )
+      .slice(0, 8);
+  }, [drugs, drugSearch, pickedDrug, reviewItems]);
+
+  const setReviewQuantity = (drugId, value) =>
+    setReviewItems((current) =>
+      current.map((item) => (item.drugId === drugId ? { ...item, quantity: value } : item))
+    );
+
+  const removeReviewItem = (drugId) => {
+    setReviewItems((current) => current.filter((item) => item.drugId !== drugId));
+    setReviewError('');
+  };
+
+  const addReviewItem = () => {
+    if (!pickedDrug) {
+      setReviewError('Pick a drug from the list first.');
+      return;
+    }
+    const amount = Number(addQuantity);
+    if (!amount || amount <= 0) {
+      setReviewError('Enter a quantity greater than zero for this drug.');
+      return;
+    }
+    setReviewItems((current) => [
+      ...current,
+      {
+        drugId: pickedDrug.id,
+        drugName: pickedDrug.name,
+        drugCode: pickedDrug.code,
+        unitOfMeasure: pickedDrug.unitOfMeasure,
+        quantity: String(amount)
+      }
+    ]);
+    setPickedDrug(null);
+    setDrugSearch('');
+    setAddQuantity('');
+    setReviewError('');
+  };
+
+  const handleApprove = () => {
+    const cleaned = reviewItems
+      .map((item) => ({ drugId: item.drugId, requestedQuantity: Number(item.quantity) }))
+      .filter((item) => Number.isFinite(item.requestedQuantity) && item.requestedQuantity > 0);
+    if (cleaned.length === 0) {
+      setReviewError('Keep at least one drug with a quantity above zero before approving.');
+      return;
+    }
+    setReviewError('');
+    onAction('approve', { items: cleaned });
+  };
+
   const totals = items.reduce(
     (accumulator, item) => ({
       requested: accumulator.requested + Number(item.requestedQuantity || 0),
@@ -109,46 +219,27 @@ export default function RequisitionDetailDrawer({
           ) : null}
 
           <div>
-            <p className="field-label">Requested drugs</p>
+            <p className="field-label">{canReview ? 'Review the drugs and quantities' : 'Requested drugs'}</p>
             <ul className="divide-y divide-sand-100 rounded-xl border border-sand-200">
-              {items.map((item) => (
-                <li key={item.id} className="px-3 py-2.5">
+              {(canReview ? reviewItems : items).map((item) => (
+                <li key={item.drugId} className="px-3 py-2.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-primary-900">
                         {item.drugName}
                       </p>
                       <p className="text-[11px] text-primary-500">
-                        {item.drugCode} · on hand {formatQuantity(item.usableQuantity)} · minimum{' '}
-                        {formatQuantity(item.minimumStockLevel)}
+                        {item.drugCode}
+                        {canReview
+                          ? ` · ${item.unitOfMeasure}`
+                          : ` · on hand ${formatQuantity(item.usableQuantity)} · minimum ${formatQuantity(
+                              item.minimumStockLevel
+                            )}`}
                       </p>
-                      {item.isAutoGenerated ? (
+                      {!canReview && item.isAutoGenerated ? (
                         <span className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                           Auto-suggested
                         </span>
-                      ) : null}
-                      {canReview ? (
-                        <div className="mt-2 max-w-[160px]">
-                          <Input
-                            label="Suggested quantity"
-                            type="number"
-                            min="0"
-                            step="any"
-                            max={item.requestedQuantity}
-                            value={
-                              suggestions[item.id] ??
-                              (item.suggestedQuantity === null || item.suggestedQuantity === undefined
-                                ? String(item.requestedQuantity)
-                                : String(item.suggestedQuantity))
-                            }
-                            onChange={(event) =>
-                              setSuggestions((current) => ({
-                                ...current,
-                                [item.id]: event.target.value
-                              }))
-                            }
-                          />
-                        </div>
                       ) : null}
                       {showBalances ? (
                         <div className="mt-1.5 grid grid-cols-2 gap-2 rounded-lg bg-sand-50 px-2 py-1.5 text-[11px]">
@@ -192,15 +283,110 @@ export default function RequisitionDetailDrawer({
                       ) : null}
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-[10px] uppercase tracking-wide text-primary-400">Requested</p>
-                      <p className="text-sm font-bold text-primary-900">
-                        {formatQuantity(item.requestedQuantity)} {item.unitOfMeasure}
-                      </p>
+                      {canReview ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item.quantity}
+                            onChange={(event) => setReviewQuantity(item.drugId, event.target.value)}
+                            aria-label={`Quantity for ${item.drugName}`}
+                            className="field w-24 py-1 text-right text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeReviewItem(item.drugId)}
+                            aria-label={`Remove ${item.drugName}`}
+                            className="rounded-lg p-1.5 text-maroon-600 transition hover:bg-maroon-50"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-[10px] uppercase tracking-wide text-primary-400">
+                            Requested
+                          </p>
+                          <p className="text-sm font-bold text-primary-900">
+                            {formatQuantity(item.requestedQuantity)} {item.unitOfMeasure}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </li>
               ))}
             </ul>
+
+            {canReview ? (
+              <div className="mt-3 space-y-2 rounded-xl border border-sand-200 bg-sand-50/60 p-3">
+                <p className="text-xs font-semibold text-primary-800">Add a drug the staff missed</p>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-300"
+                    aria-hidden="true"
+                  />
+                  <input
+                    value={drugSearch}
+                    onChange={(event) => {
+                      setDrugSearch(event.target.value);
+                      setPickedDrug(null);
+                    }}
+                    placeholder="Type a drug name or code"
+                    autoComplete="off"
+                    aria-label="Search drugs to add"
+                    className="field pl-9"
+                  />
+                  {drugMatches.length > 0 ? (
+                    <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-sand-200 bg-white shadow-lg">
+                      {drugMatches.map((drug) => (
+                        <li key={drug.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPickedDrug(drug);
+                              setDrugSearch(`${drug.name} (${drug.code})`);
+                              setReviewError('');
+                            }}
+                            className="w-full px-3 py-2 text-left text-sm text-primary-800 transition hover:bg-primary-50"
+                          >
+                            {drug.name} ({drug.code})
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                {pickedDrug ? (
+                  <p className="text-[11px] font-semibold text-leaf-600">
+                    Selected: {pickedDrug.name} ({pickedDrug.code}) · {pickedDrug.unitOfMeasure}
+                  </p>
+                ) : null}
+                <div className="flex items-end gap-2">
+                  <div className="w-28">
+                    <label className="field-label" htmlFor="oic-add-quantity">
+                      Quantity
+                    </label>
+                    <input
+                      id="oic-add-quantity"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={addQuantity}
+                      onChange={(event) => setAddQuantity(event.target.value)}
+                      placeholder="0"
+                      className="field py-1.5 text-sm"
+                    />
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={addReviewItem}>
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Add
+                  </Button>
+                </div>
+                {reviewError ? <p className="text-xs text-maroon-600">{reviewError}</p> : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-1 text-xs text-primary-500">
@@ -214,10 +400,18 @@ export default function RequisitionDetailDrawer({
             {requisition.closedAt ? <p>Closed {formatDateTime(requisition.closedAt)}</p> : null}
           </div>
 
-          {events.length > 0 ? (
-            <div>
-              <p className="field-label">History</p>
-              <ul className="space-y-2">
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowHistory((current) => !current)}
+              aria-expanded={showHistory}
+              className="flex w-full items-center justify-between text-xs font-semibold text-primary-500"
+            >
+              <span>History ({events.length})</span>
+              <span>{showHistory ? 'Hide' : 'Show'}</span>
+            </button>
+            {showHistory && events.length > 0 ? (
+              <ul className="mt-2 max-h-52 space-y-2 overflow-y-auto">
                 {events.map((event) => (
                   <li key={event.id} className="flex gap-2 text-xs text-primary-600">
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-leaf-400" />
@@ -231,12 +425,20 @@ export default function RequisitionDetailDrawer({
                   </li>
                 ))}
               </ul>
-            </div>
+            ) : null}
+          </div>
+
+          {awaitingOic ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {canApprove
+                ? 'Change any quantity, add a drug the staff missed or remove one, then approve. The Logistician only sees what you approve here.'
+                : 'Waiting for the OIC to approve this request before it goes to the Logistician.'}
+            </p>
           ) : null}
 
-          {selfReviewBlocked ? (
+          {awaitingLogistician ? (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              The local government reviews and approves this request. Your quantities are a suggestion.
+              Sent to the Logistician. Waiting for the request to be reviewed and dispatched.
             </p>
           ) : null}
 
@@ -256,24 +458,7 @@ export default function RequisitionDetailDrawer({
             {canSubmit || canReview || canClose ? (
               <Button
                 size="sm"
-                onClick={() =>
-                  onAction(
-                    canReview ? 'suggest' : canClose ? 'close' : 'submit',
-                    canReview
-                      ? {
-                          items: items.map((item) => ({
-                            drugId: item.drugId,
-                            quantity: Number(
-                              suggestions[item.id] ??
-                                (item.suggestedQuantity === null || item.suggestedQuantity === undefined
-                                  ? item.requestedQuantity
-                                  : item.suggestedQuantity)
-                            )
-                          }))
-                        }
-                      : undefined
-                  )
-                }
+                onClick={canReview ? handleApprove : () => onAction(canClose ? 'close' : 'submit')}
                 loading={busy}
               >
                 {canReview ? (
@@ -283,14 +468,14 @@ export default function RequisitionDetailDrawer({
                 ) : (
                   <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
                 )}
-                {canReview ? 'Send suggested quantities' : canClose ? 'Close request' : 'Submit for approval'}
+                {canReview
+                  ? 'Approve request'
+                  : canClose
+                    ? 'Close request'
+                    : canApprove
+                      ? 'Send to Logistician'
+                      : 'Submit for approval'}
               </Button>
-            ) : null}
-
-            {canReview ? (
-              <p className="text-xs text-primary-500">
-                The local government will review this request.
-              </p>
             ) : null}
 
             {canAmend ? (

@@ -9,7 +9,7 @@ import RequisitionFormDrawer from './components/RequisitionFormDrawer.jsx';
 import RequisitionDetailDrawer from './components/RequisitionDetailDrawer.jsx';
 import {
   amendRequisition,
-  suggestQuantities,
+  approveRequisition,
   cancelRequisition,
   closeRequisition,
   deleteRequisition,
@@ -29,7 +29,8 @@ const PAGE_SIZE = 20;
 const filters = [
   { value: '', label: 'All' },
   { value: 'draft', label: 'Drafts' },
-  { value: 'pending_approval', label: 'Pending' },
+  { value: 'pending_oic', label: 'OIC approval' },
+  { value: 'pending_approval', label: 'With Logistician' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
   { value: 'closed', label: 'Closed' }
@@ -191,7 +192,21 @@ export default function RequisitionsPage() {
         return;
       }
     } else if (action === 'submit') {
-      if (!window.confirm('Submit this requisition for approval? It can no longer be edited.')) {
+      const message = canApprove
+        ? 'Submit this requisition? As OIC it goes straight to the Logistician and can no longer be edited.'
+        : 'Submit this requisition for OIC approval? It can no longer be edited.';
+      if (!window.confirm(message)) {
+        return;
+      }
+    } else if (action === 'approve') {
+      const itemCount = payload?.items?.length || 0;
+      const message =
+        itemCount > 0
+          ? `Approve ${requisition.requisitionNumber} with ${itemCount} item${
+              itemCount === 1 ? '' : 's'
+            } exactly as shown and send it to the Logistician?`
+          : `Approve ${requisition.requisitionNumber} and send it to the Logistician?`;
+      if (!window.confirm(message)) {
         return;
       }
     } else if (action === 'close') {
@@ -221,8 +236,8 @@ export default function RequisitionsPage() {
       const result =
         action === 'submit'
           ? await submitRequisition(requisition.id)
-          : action === 'suggest'
-            ? await suggestQuantities(requisition.id, payload)
+          : action === 'approve'
+            ? await approveRequisition(requisition.id, payload?.items)
             : action === 'reject'
               ? await rejectRequisition(requisition.id, reason)
               : action === 'cancel'
@@ -231,14 +246,21 @@ export default function RequisitionsPage() {
                   ? await closeRequisition(requisition.id)
                   : await amendRequisition(requisition.id);
 
+      const completedLabels = {
+        submit: canApprove ? 'submitted to the Logistician' : 'submitted for OIC approval',
+        reject: 'rejected',
+        cancel: 'cancelled',
+        close: 'closed'
+      };
+
       setDetail(result);
       setDetailId(result.requisition.id);
       setNotice(
         action === 'amend'
           ? `Amendment draft ${result.requisition.requisitionNumber} created.`
-          : action === 'suggest'
-            ? `Suggested quantities sent for ${result.requisition.requisitionNumber}.`
-            : `${result.requisition.requisitionNumber} ${action === 'close' ? 'closed' : `${action}d`}.`
+          : action === 'approve'
+            ? `${result.requisition.requisitionNumber} approved and sent to the Logistician.`
+            : `${result.requisition.requisitionNumber} ${completedLabels[action] || action}.`
       );
       refreshAll();
     } catch (actionError) {
@@ -468,6 +490,11 @@ export default function RequisitionsPage() {
         canCreate={canCreate}
         currentUserId={user?.id}
         onAction={handleDetailAction}
+        onEdit={() => {
+          setEditing(detail);
+          closeDetail();
+          setFormOpen(true);
+        }}
       />
     </div>
   );

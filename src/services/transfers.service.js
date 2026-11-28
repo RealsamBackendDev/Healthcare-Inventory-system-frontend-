@@ -28,6 +28,11 @@ export const getTransferRequest = (requestId) => get(`/transfers/requests/${requ
 
 export const createTransferRequest = (payload) => post('/transfers/requests', payload);
 
+export const sendStock = (payload) => post('/transfers/send', payload);
+
+export const endorseTransferRequest = (requestId, note) =>
+  post(`/transfers/requests/${requestId}/endorse`, { note: note || null });
+
 export const approveTransferRequest = (requestId, note) =>
   post(`/transfers/requests/${requestId}/approve`, {
     note: note || null,

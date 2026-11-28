@@ -6,8 +6,7 @@ import {
   RefreshCw,
   RotateCcw,
   Trash2,
-  Truck,
-  Undo2
+  Truck
 } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -16,6 +15,7 @@ import Input from '../../components/ui/Input.jsx';
 import {
   listDamagedStock,
   listReturnsInTransit,
+  markStockDamaged,
   receiveReturn,
   recordDamageDisposition
 } from '../../services/damage.service.js';
@@ -78,6 +78,10 @@ export default function DamagePage() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [damageForm, setDamageForm] = useState({ batchId: '', quantity: '', reason: '' });
+  const [damageError, setDamageError] = useState('');
+  const [damageSaving, setDamageSaving] = useState(false);
+
   const [returnId, setReturnId] = useState(null);
   const [returnForm, setReturnForm] = useState(emptyReceipt);
   const [returnError, setReturnError] = useState('');
@@ -109,6 +113,55 @@ export default function DamagePage() {
   const items = data?.items || [];
   const history = data?.recentDispositions || [];
   const inTransit = returns?.items || [];
+  const availableBatches = data?.availableBatches || [];
+
+  const damagedBatch = useMemo(
+    () => availableBatches.find((batch) => batch.batchId === damageForm.batchId) || null,
+    [availableBatches, damageForm.batchId]
+  );
+
+  const submitDamage = async (event) => {
+    event.preventDefault();
+    if (!damagedBatch) {
+      setDamageError('Choose the batch the damaged stock came from.');
+      return;
+    }
+
+    const quantity = Number(damageForm.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setDamageError('Enter how many units are damaged.');
+      return;
+    }
+    if (quantity > damagedBatch.quantity) {
+      setDamageError(
+        `That batch only holds ${formatQuantity(damagedBatch.quantity)} ${damagedBatch.unitOfMeasure}.`
+      );
+      return;
+    }
+    if (damageForm.reason.trim().length < 3) {
+      setDamageError('Say briefly what happened.');
+      return;
+    }
+
+    setDamageError('');
+    setDamageSaving(true);
+    try {
+      const result = await markStockDamaged(damagedBatch.batchId, {
+        quantity,
+        reason: damageForm.reason.trim()
+      });
+      setNotice(
+        `${formatQuantity(result.quantity)} ${result.unitOfMeasure} of ${result.drugName} ` +
+          `moved into quarantine lot ${result.batchNumber}.`
+      );
+      setDamageForm({ batchId: '', quantity: '', reason: '' });
+      await load();
+    } catch (saveError) {
+      setDamageError(saveError.message || 'The stock could not be moved into quarantine.');
+    } finally {
+      setDamageSaving(false);
+    }
+  };
 
   const selected = useMemo(
     () => items.find((item) => item.batchId === selectedId) || null,
@@ -271,6 +324,82 @@ export default function DamagePage() {
         />
       </div>
 
+      {canRecord && availableBatches.length > 0 ? (
+        <Card padded={false}>
+          <div className="border-b border-sand-200 px-4 py-3 sm:px-5">
+            <p className="text-sm font-semibold text-primary-900">Mark stock as damaged</p>
+            <p className="mt-0.5 text-[11px] text-primary-500">
+              Take only the damaged units out of a batch. The rest stays usable, and the damaged
+              units wait here for a decision.
+            </p>
+          </div>
+          <form onSubmit={submitDamage} className="space-y-3 px-4 py-3 sm:px-5">
+            <div>
+              <label className="field-label" htmlFor="damage-batch">
+                Batch
+              </label>
+              <select
+                id="damage-batch"
+                className="field"
+                value={damageForm.batchId}
+                onChange={(event) =>
+                  setDamageForm((current) => ({
+                    ...current,
+                    batchId: event.target.value,
+                    quantity: ''
+                  }))
+                }
+              >
+                <option value="">Select a batch</option>
+                {availableBatches.map((batch) => (
+                  <option key={batch.batchId} value={batch.batchId}>
+                    {batch.drugName} · {batch.batchNumber} ·{' '}
+                    {formatQuantity(batch.quantity)} {batch.unitOfMeasure} · expires{' '}
+                    {formatDate(batch.expiryDate)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label={
+                  damagedBatch
+                    ? `Quantity (max ${formatQuantity(damagedBatch.quantity)})`
+                    : 'Quantity'
+                }
+                name="damageQuantity"
+                type="number"
+                min="0"
+                step="any"
+                value={damageForm.quantity}
+                onChange={(event) =>
+                  setDamageForm((current) => ({ ...current, quantity: event.target.value }))
+                }
+                placeholder="0"
+              />
+              <Input
+                label="What happened"
+                name="damageReason"
+                value={damageForm.reason}
+                placeholder="Broken while moving"
+                onChange={(event) =>
+                  setDamageForm((current) => ({ ...current, reason: event.target.value }))
+                }
+              />
+            </div>
+
+            {damageError ? (
+              <p className="text-xs font-medium text-maroon-600">{damageError}</p>
+            ) : null}
+
+            <Button type="submit" size="sm" loading={damageSaving}>
+              Move into quarantine
+            </Button>
+          </form>
+        </Card>
+      ) : null}
+
       <Card padded={false}>
         {loading ? (
           <div className="divide-y divide-sand-100">
@@ -344,34 +473,24 @@ export default function DamagePage() {
                     onSubmit={submit}
                     className="mt-3 space-y-3 rounded-xl border border-sand-200 bg-sand-50 p-3"
                   >
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { value: 'restocked', label: 'Return to usable stock', icon: RotateCcw },
-                        { value: 'written_off', label: 'Write off', icon: Trash2 },
-                        { value: 'returned', label: 'Returned to sender', icon: Undo2 }
-                      ].map((option) => {
-                        const disabled = option.value === 'restocked' && item.expired;
-                        const active = form.disposition === option.value;
-                        const Icon = option.icon;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            disabled={disabled}
-                            onClick={() =>
-                              setForm((current) => ({ ...current, disposition: option.value }))
-                            }
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
-                              active
-                                ? 'border-primary-400 bg-white text-primary-900'
-                                : 'border-sand-300 bg-white text-primary-600 hover:text-primary-900'
-                            } disabled:cursor-not-allowed disabled:opacity-40`}
-                          >
-                            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                            {option.label}
-                          </button>
-                        );
-                      })}
+                    <div>
+                      <label className="field-label" htmlFor={`damage-decision-${item.batchId}`}>
+                        Decision
+                      </label>
+                      <select
+                        id={`damage-decision-${item.batchId}`}
+                        className="field"
+                        value={form.disposition}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, disposition: event.target.value }))
+                        }
+                      >
+                        <option value="restocked" disabled={item.expired}>
+                          Return to usable stock
+                        </option>
+                        <option value="written_off">Write off</option>
+                        <option value="returned">Returned to sender</option>
+                      </select>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">

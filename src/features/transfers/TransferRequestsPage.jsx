@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeftRight, Check, RefreshCw, Send, X } from 'lucide-react';
+import { ArrowLeftRight, Check, Plus, RefreshCw, Send, Trash2, X } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
+import * as inventoryService from '../../services/inventory.service.js';
 import * as transfersService from '../../services/transfers.service.js';
 import { formatDateTime, formatQuantity } from '../../utils/format.js';
 
 const statusLabels = {
+  pending_approval: 'Waiting for OIC approval',
   requested: 'Waiting for the source facility',
   in_transit: 'Approved, on the way',
   partially_received: 'Part received',
@@ -17,6 +19,7 @@ const statusLabels = {
 };
 
 const statusStyles = {
+  pending_approval: 'bg-amber-50 text-amber-700 border-amber-200',
   requested: 'bg-amber-50 text-amber-700 border-amber-200',
   in_transit: 'bg-leaf-50 text-primary-700 border-leaf-200',
   partially_received: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -26,11 +29,12 @@ const statusStyles = {
 };
 
 export default function TransferRequestsPage() {
-  const { activeCentre } = useAuth();
+  const { activeCentre, user, isAdministrator } = useAuth();
 
   const [tab, setTab] = useState('sent');
   const [sent, setSent] = useState([]);
   const [incoming, setIncoming] = useState([]);
+  const [endorsements, setEndorsements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -46,21 +50,39 @@ export default function TransferRequestsPage() {
   const [facilityId, setFacilityId] = useState('');
   const [stock, setStock] = useState([]);
   const [stockLoading, setStockLoading] = useState(false);
-  const [drugId, setDrugId] = useState('');
-  const [quantity, setQuantity] = useState('');
+  const [lines, setLines] = useState([{ key: 'line-1', drugId: '', quantity: '' }]);
   const [note, setNote] = useState('');
   const [creating, setCreating] = useState(false);
+
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendFacilityId, setSendFacilityId] = useState('');
+  const [sendStock, setSendStock] = useState([]);
+  const [sendLines, setSendLines] = useState([{ key: 'send-1', drugId: '', quantity: '' }]);
+  const [sendNote, setSendNote] = useState('');
+  const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [sentRows, incomingRows] = await Promise.all([
+      const [sentRows, incomingRows, endorseRows] = await Promise.all([
         transfersService.listTransferRequests('outgoing'),
-        transfersService.listTransferRequests('incoming')
+        transfersService.listTransferRequests('incoming'),
+        transfersService.listTransferRequests('endorse').catch(() => [])
       ]);
       setSent(sentRows || []);
       setIncoming(incomingRows || []);
+      const endorsed = await Promise.all(
+        (endorseRows || []).map(async (row) => {
+          try {
+            const detail = await transfersService.getTransferRequest(row.id);
+            return { ...row, items: detail.items || [] };
+          } catch (detailError) {
+            return row;
+          }
+        })
+      );
+      setEndorsements(endorsed);
     } catch (loadError) {
       setError(loadError.message || 'Transfer requests could not be loaded.');
     } finally {
@@ -103,7 +125,13 @@ export default function TransferRequestsPage() {
           return;
         }
         setStock(result.items || []);
-        setDrugId(result.items && result.items.length > 0 ? result.items[0].drugId : '');
+        setLines([
+          {
+            key: 'line-1',
+            drugId: result.items && result.items.length > 0 ? result.items[0].drugId : '',
+            quantity: ''
+          }
+        ]);
       })
       .catch((loadError) => {
         if (!cancelled) {
@@ -120,13 +148,58 @@ export default function TransferRequestsPage() {
     };
   }, [facilityId]);
 
+  const addLine = () => {
+    const used = new Set(lines.map((line) => line.drugId));
+    const next = stock.find((item) => !used.has(item.drugId)) || stock[0] || null;
+    setLines((current) => [
+      ...current,
+      {
+        key: `line-${Math.random().toString(36).slice(2, 9)}`,
+        drugId: next ? next.drugId : '',
+        quantity: ''
+      }
+    ]);
+  };
+
+  const removeLine = (key) => {
+    setLines((current) => (current.length === 1 ? current : current.filter((line) => line.key !== key)));
+  };
+
+  const updateLine = (key, patch) => {
+    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  };
+
   const submitRequest = async (event) => {
     event.preventDefault();
     setError('');
     setNotice('');
-    const amount = Number(quantity);
-    if (!drugId || !amount || amount <= 0) {
-      setError('Choose a drug and enter a quantity above zero.');
+    const prepared = lines
+      .map((line) => ({ drugId: line.drugId, quantity: Number(line.quantity) }))
+      .filter((line) => line.drugId && line.quantity > 0);
+    if (prepared.length === 0) {
+      setError('Choose at least one drug and enter a quantity above zero.');
+      return;
+    }
+    if (prepared.length !== lines.length) {
+      setError('Every drug line needs a quantity above zero, or remove the line.');
+      return;
+    }
+    const chosen = new Set(prepared.map((line) => line.drugId));
+    if (chosen.size !== prepared.length) {
+      setError('Remove the duplicate drug line before sending.');
+      return;
+    }
+    const overAsk = prepared.find((line) => {
+      const row = stock.find((item) => item.drugId === line.drugId);
+      return row && line.quantity > Number(row.quantity);
+    });
+    if (overAsk) {
+      const row = stock.find((item) => item.drugId === overAsk.drugId);
+      setError(
+        `${row.name} only has ${formatQuantity(row.quantity)} ${
+          row.unitOfMeasure || 'units'
+        } available there, so the quantity cannot go above that.`
+      );
       return;
     }
     setCreating(true);
@@ -134,11 +207,11 @@ export default function TransferRequestsPage() {
       const created = await transfersService.createTransferRequest({
         fromCentreId: facilityId,
         note: note || null,
-        items: [{ drugId, quantity: amount }]
+        items: prepared
       });
       setNotice(`Request ${created.transferNumber} sent to ${created.fromCentreName}.`);
       setFormOpen(false);
-      setQuantity('');
+      setLines([{ key: 'line-1', drugId: stock.length > 0 ? stock[0].drugId : '', quantity: '' }]);
       setNote('');
       setTab('sent');
       await load();
@@ -146,6 +219,135 @@ export default function TransferRequestsPage() {
       setError(createError.message || 'The request could not be sent.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const openSendForm = async () => {
+    setSendOpen(true);
+    setError('');
+    setNotice('');
+    if (neighbours.length === 0) {
+      try {
+        const rows = await transfersService.listNeighbours();
+        setNeighbours(rows || []);
+        if (rows && rows.length > 0) {
+          setSendFacilityId(rows[0].id);
+        }
+      } catch (loadError) {
+        setError(loadError.message || 'Neighbouring facilities could not be loaded.');
+      }
+    } else if (!sendFacilityId) {
+      setSendFacilityId(neighbours[0].id);
+    }
+    try {
+      const result = await inventoryService.listInventory({ pageSize: 100 });
+      const items = (result.items || []).filter((row) => Number(row.usableQuantity) > 0);
+      setSendStock(items);
+      setSendLines([
+        { key: 'send-1', drugId: items.length > 0 ? items[0].drugId : '', quantity: '' }
+      ]);
+    } catch (loadError) {
+      setError(loadError.message || 'Your store stock could not be loaded.');
+    }
+  };
+
+  const addSendLine = () => {
+    const used = new Set(sendLines.map((line) => line.drugId));
+    const next = sendStock.find((item) => !used.has(item.drugId)) || sendStock[0] || null;
+    setSendLines((current) => [
+      ...current,
+      {
+        key: `send-${Math.random().toString(36).slice(2, 9)}`,
+        drugId: next ? next.drugId : '',
+        quantity: ''
+      }
+    ]);
+  };
+
+  const removeSendLine = (key) => {
+    setSendLines((current) =>
+      current.length === 1 ? current : current.filter((line) => line.key !== key)
+    );
+  };
+
+  const updateSendLine = (key, patch) => {
+    setSendLines((current) =>
+      current.map((line) => (line.key === key ? { ...line, ...patch } : line))
+    );
+  };
+
+  const submitSend = async (event) => {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    const prepared = sendLines
+      .map((line) => ({ drugId: line.drugId, quantity: Number(line.quantity) }))
+      .filter((line) => line.drugId && line.quantity > 0);
+    if (prepared.length === 0) {
+      setError('Choose at least one drug and enter a quantity above zero.');
+      return;
+    }
+    if (prepared.length !== sendLines.length) {
+      setError('Every drug line needs a quantity above zero, or remove the line.');
+      return;
+    }
+    if (new Set(prepared.map((line) => line.drugId)).size !== prepared.length) {
+      setError('Remove the duplicate drug line before sending.');
+      return;
+    }
+    const tooMuch = prepared.find((line) => {
+      const row = sendStock.find((item) => item.drugId === line.drugId);
+      return row && line.quantity > Number(row.usableQuantity);
+    });
+    if (tooMuch) {
+      const row = sendStock.find((item) => item.drugId === tooMuch.drugId);
+      setError(
+        `You only have ${formatQuantity(row.usableQuantity)} ${
+          row.unitOfMeasure || 'units'
+        } of ${row.name}, so the quantity cannot go above that.`
+      );
+      return;
+    }
+    setSending(true);
+    try {
+      const created = await transfersService.sendStock({
+        toCentreId: sendFacilityId,
+        note: sendNote || null,
+        items: prepared
+      });
+      setNotice(
+        created.status === 'pending_approval'
+          ? `${created.transferNumber} is waiting for the OIC to approve sending it to ${created.toCentreName}.`
+          : `${created.transferNumber} sent to ${created.toCentreName}. They confirm when it arrives.`
+      );
+      setSendOpen(false);
+      setSendNote('');
+      setSendLines([{ key: 'send-1', drugId: '', quantity: '' }]);
+      setTab('sent');
+      await load();
+    } catch (sendError) {
+      setError(sendError.message || 'The stock could not be sent.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const endorse = async (requestId) => {
+    setBusyId(requestId);
+    setError('');
+    setNotice('');
+    try {
+      const result = await transfersService.endorseTransferRequest(requestId, null);
+      setNotice(
+        result.direction === 'out'
+          ? `Approved ${result.transferNumber}. The stock is on its way to ${result.toCentreName}.`
+          : `Approved ${result.transferNumber}. ${result.fromCentreName} has been asked for the stock.`
+      );
+      await load();
+    } catch (actionError) {
+      setError(actionError.message || 'This request could not be approved.');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -409,7 +611,13 @@ export default function TransferRequestsPage() {
           <p className="text-xs text-primary-500">
             {mode === 'incoming'
               ? `Requested by ${request.toCentreName}`
-              : `From ${request.fromCentreName}`}
+              : mode === 'endorse'
+                ? request.direction === 'out'
+                  ? `${request.requestedByName || 'Staff'} wants to send stock to ${request.toCentreName}`
+                  : `Raised by ${request.requestedByName || 'staff'}`
+                : request.direction === 'out'
+                  ? `Sent to ${request.toCentreName}`
+                  : `From ${request.fromCentreName}`}
           </p>
           <p className="text-xs text-primary-400">
             {formatQuantity(request.totalQuantity)} units · {formatDateTime(request.createdAt)}
@@ -426,6 +634,39 @@ export default function TransferRequestsPage() {
 
       {request.decisionNote ? (
         <p className="mt-2 text-xs text-primary-500">Note: {request.decisionNote}</p>
+      ) : null}
+
+      {mode === 'sent' && request.status === 'pending_approval' ? (
+        <p className="mt-2 text-[11px] text-amber-700">
+          {request.direction === 'out'
+            ? 'Waiting for the OIC to approve this before the stock leaves your store.'
+            : `Waiting for the OIC to approve this before ${request.fromCentreName} sees it.`}
+        </p>
+      ) : null}
+
+      {mode === 'sent' && request.direction === 'out' && request.status !== 'pending_approval' ? (
+        <p className="mt-2 text-[11px] text-primary-400">
+          {request.toCentreName} confirms when the stock arrives.
+        </p>
+      ) : null}
+
+      {mode === 'endorse' && Array.isArray(request.items) && request.items.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {request.items.map((item) => (
+            <li key={item.drugId} className="text-[11px] text-primary-600">
+              {item.name}: {formatQuantity(item.quantity)} {item.unitOfMeasure}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {mode === 'endorse' && request.status === 'pending_approval' ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => endorse(request.id)} loading={busyId === request.id}>
+            <Check className="h-4 w-4" aria-hidden="true" />
+            {request.direction === 'out' ? 'Approve and release stock' : 'Approve request'}
+          </Button>
+        </div>
       ) : null}
 
       {mode === 'incoming' && request.status === 'requested' ? (
@@ -460,6 +701,7 @@ export default function TransferRequestsPage() {
       ) : null}
 
       {mode === 'sent' &&
+      request.direction !== 'out' &&
       (request.status === 'in_transit' || request.status === 'partially_received') ? (
         <div className="mt-3 space-y-2">
           {request.status === 'partially_received' ? (
@@ -474,7 +716,7 @@ export default function TransferRequestsPage() {
         </div>
       ) : null}
 
-      {mode === 'sent' && request.openShortages > 0 ? (
+      {mode === 'sent' && request.direction !== 'out' && request.openShortages > 0 ? (
         <div className="mt-3 space-y-2">
           <p className="text-[11px] text-amber-700">
             {request.openShortages} line{request.openShortages === 1 ? '' : 's'} short and waiting for a
@@ -497,7 +739,9 @@ export default function TransferRequestsPage() {
         </p>
       ) : null}
 
-      {mode === 'sent' && request.status === 'requested' ? (
+      {mode === 'sent' &&
+      (request.status === 'requested' || request.status === 'pending_approval') &&
+      (request.requestedById === (user && user.id) || isAdministrator) ? (
         <div className="mt-3 space-y-2">
           <Input
             placeholder="Reason if you cancel"
@@ -520,15 +764,13 @@ export default function TransferRequestsPage() {
     </li>
   );
 
-  const selectedDrug = stock.find((item) => item.drugId === drugId);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-primary-900">Transfer requests</h1>
           <p className="text-xs text-primary-500">
-            Ask a neighbouring facility for stock, or answer a request sent to{' '}
+            Ask a neighbouring facility for stock, send them stock, or answer a request sent to{' '}
             {activeCentre?.name || 'your store'}
           </p>
         </div>
@@ -536,6 +778,10 @@ export default function TransferRequestsPage() {
           <Button variant="outline" size="sm" onClick={load} loading={loading}>
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Refresh
+          </Button>
+          <Button size="sm" variant="outline" onClick={openSendForm}>
+            <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
+            Send stock
           </Button>
           <Button size="sm" onClick={openForm}>
             <Send className="h-4 w-4" aria-hidden="true" />
@@ -579,33 +825,63 @@ export default function TransferRequestsPage() {
             </select>
           </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-primary-600">Drug</span>
-            <select
-              value={drugId}
-              onChange={(event) => setDrugId(event.target.value)}
-              className="h-11 w-full rounded-xl border border-sand-300 bg-white px-3 text-sm text-primary-900 focus:border-primary-400 focus:outline-none"
-            >
-              {stock.map((item) => (
-                <option key={item.drugId} value={item.drugId}>
-                  {item.name} ({item.code}) — {formatQuantity(item.quantity)} available
-                </option>
-              ))}
-              {stock.length === 0 ? <option value="">No stock at this facility</option> : null}
-            </select>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-primary-600">Drugs to request</span>
+              <span className="text-[11px] text-primary-400">
+                {lines.length} line{lines.length === 1 ? '' : 's'}
+              </span>
+            </div>
             {stockLoading ? (
               <span className="text-[11px] text-primary-400">Loading facility stock…</span>
             ) : null}
-          </label>
-
-          <Input
-            label="Quantity"
-            type="number"
-            min="1"
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            placeholder={selectedDrug ? `Up to ${formatQuantity(selectedDrug.quantity)}` : ''}
-          />
+            {lines.map((line) => {
+              const lineDrug = stock.find((item) => item.drugId === line.drugId);
+              return (
+                <div key={line.key} className="space-y-2 rounded-xl border border-sand-200 p-3">
+                  <div className="flex items-start gap-2">
+                    <label className="block min-w-0 flex-1">
+                      <span className="mb-1 block text-[11px] font-semibold text-primary-600">Drug</span>
+                      <select
+                        value={line.drugId}
+                        onChange={(event) => updateLine(line.key, { drugId: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-sand-300 bg-white px-3 text-sm text-primary-900 focus:border-primary-400 focus:outline-none"
+                      >
+                        {stock.map((item) => (
+                          <option key={item.drugId} value={item.drugId}>
+                            {item.name} ({item.code}) — {formatQuantity(item.quantity)} available
+                          </option>
+                        ))}
+                        {stock.length === 0 ? <option value="">No stock at this facility</option> : null}
+                      </select>
+                    </label>
+                    {lines.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(line.key)}
+                        className="mt-6 rounded-lg p-2 text-maroon-600 transition hover:bg-maroon-50"
+                        aria-label="Remove drug line"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <Input
+                    label="Quantity"
+                    type="number"
+                    min="1"
+                    value={line.quantity}
+                    onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
+                    placeholder={lineDrug ? `Up to ${formatQuantity(lineDrug.quantity)}` : ''}
+                  />
+                </div>
+              );
+            })}
+            <Button type="button" variant="outline" size="sm" onClick={addLine} disabled={stock.length === 0}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add another drug
+            </Button>
+          </div>
 
           <Input
             label="Note"
@@ -618,6 +894,115 @@ export default function TransferRequestsPage() {
             <Button type="submit" size="sm" loading={creating} disabled={stock.length === 0}>
               <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
               Send request
+            </Button>
+          </div>
+        </form>
+      ) : null}
+
+      {sendOpen ? (
+        <form
+          onSubmit={submitSend}
+          className="space-y-3 rounded-2xl border border-sand-200 bg-white p-4"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-primary-900">Send stock to a facility</p>
+            <button
+              type="button"
+              onClick={() => setSendOpen(false)}
+              className="rounded-lg p-1 text-primary-400 transition hover:bg-primary-50"
+              aria-label="Close send form"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-primary-600">Send to</span>
+            <select
+              value={sendFacilityId}
+              onChange={(event) => setSendFacilityId(event.target.value)}
+              className="h-11 w-full rounded-xl border border-sand-300 bg-white px-3 text-sm text-primary-900 focus:border-primary-400 focus:outline-none"
+            >
+              {neighbours.map((neighbour) => (
+                <option key={neighbour.id} value={neighbour.id}>
+                  {neighbour.name} ({neighbour.code})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-primary-600">Drugs to send</span>
+              <span className="text-[11px] text-primary-400">
+                {sendLines.length} line{sendLines.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            {sendLines.map((line) => {
+              const lineDrug = sendStock.find((item) => item.drugId === line.drugId);
+              return (
+                <div key={line.key} className="space-y-2 rounded-xl border border-sand-200 p-3">
+                  <div className="flex items-start gap-2">
+                    <label className="block min-w-0 flex-1">
+                      <span className="mb-1 block text-[11px] font-semibold text-primary-600">Drug</span>
+                      <select
+                        value={line.drugId}
+                        onChange={(event) => updateSendLine(line.key, { drugId: event.target.value })}
+                        className="h-11 w-full rounded-xl border border-sand-300 bg-white px-3 text-sm text-primary-900 focus:border-primary-400 focus:outline-none"
+                      >
+                        {sendStock.map((item) => (
+                          <option key={item.drugId} value={item.drugId}>
+                            {item.name} ({item.code}) — {formatQuantity(item.usableQuantity)} available
+                          </option>
+                        ))}
+                        {sendStock.length === 0 ? <option value="">No stock in your store</option> : null}
+                      </select>
+                    </label>
+                    {sendLines.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => removeSendLine(line.key)}
+                        className="mt-6 rounded-lg p-2 text-maroon-600 transition hover:bg-maroon-50"
+                        aria-label="Remove drug line"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <Input
+                    label="Quantity"
+                    type="number"
+                    min="1"
+                    value={line.quantity}
+                    onChange={(event) => updateSendLine(line.key, { quantity: event.target.value })}
+                    placeholder={lineDrug ? `Up to ${formatQuantity(lineDrug.usableQuantity)}` : ''}
+                  />
+                </div>
+              );
+            })}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addSendLine}
+              disabled={sendStock.length === 0}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add another drug
+            </Button>
+          </div>
+
+          <Input
+            label="Note"
+            value={sendNote}
+            onChange={(event) => setSendNote(event.target.value)}
+            placeholder="Optional note for the facility"
+          />
+
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" loading={sending} disabled={sendStock.length === 0}>
+              <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
+              Send stock
             </Button>
           </div>
         </form>
@@ -804,17 +1189,31 @@ export default function TransferRequestsPage() {
         >
           To approve ({incoming.length})
         </button>
+        {isAdministrator ? (
+          <button
+            type="button"
+            onClick={() => setTab('endorse')}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+              tab === 'endorse' ? 'bg-primary-50 text-primary-800' : 'text-primary-400'
+            }`}
+          >
+            OIC approval ({endorsements.length})
+          </button>
+        ) : null}
       </div>
 
       <ul className="space-y-3">
-        {(tab === 'sent' ? sent : incoming).map((request) =>
-          renderCard(request, tab === 'sent' ? 'sent' : 'incoming')
+        {(tab === 'sent' ? sent : tab === 'incoming' ? incoming : endorsements).map((request) =>
+          renderCard(request, tab === 'sent' ? 'sent' : tab === 'incoming' ? 'incoming' : 'endorse')
         )}
-        {!loading && (tab === 'sent' ? sent : incoming).length === 0 ? (
+        {!loading &&
+        (tab === 'sent' ? sent : tab === 'incoming' ? incoming : endorsements).length === 0 ? (
           <li className="rounded-2xl border border-sand-200 bg-white px-4 py-8 text-center text-xs text-primary-400">
             {tab === 'sent'
               ? 'You have not asked a neighbouring facility for stock yet.'
-              : 'No facility has asked you for stock.'}
+              : tab === 'incoming'
+                ? 'No facility has asked you for stock.'
+                : 'No staff request is waiting for your approval.'}
           </li>
         ) : null}
       </ul>

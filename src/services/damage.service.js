@@ -5,6 +5,9 @@ export const listDamagedStock = () => get('/stock/damage');
 export const recordDamageDisposition = (batchId, payload) =>
   post(`/stock/damage/${batchId}/disposition`, payload);
 
+export const markStockDamaged = (batchId, payload) =>
+  post(`/stock/damage/${batchId}/quarantine`, payload);
+
 export const listDamageLots = () => get('/stock/damage/lots');
 
 export const listReturnsInTransit = () => get('/stock/damage/returns');

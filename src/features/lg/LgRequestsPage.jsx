@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Check, RefreshCw, Truck, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, Plus, RefreshCw, Search, Trash2, Truck, X } from 'lucide-react';
 import Alert from '../../components/ui/Alert.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Input from '../../components/ui/Input.jsx';
@@ -40,7 +40,13 @@ export default function LgRequestsPage() {
   const [showReject, setShowReject] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchKey, setDispatchKey] = useState('');
-  const [approved, setApproved] = useState({});
+  const [reviewItems, setReviewItems] = useState([]);
+  const [drugs, setDrugs] = useState([]);
+  const [drugSearch, setDrugSearch] = useState('');
+  const [pickedDrug, setPickedDrug] = useState(null);
+  const [addQuantity, setAddQuantity] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
   const [quantities, setQuantities] = useState({});
   const [dispatchNotes, setDispatchNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,17 +79,27 @@ export default function LgRequestsPage() {
     try {
       const result = await lgService.getRequest(requisitionId);
       setDetail(result);
-      const nextApproved = {};
       const nextQuantities = {};
       (result.items || []).forEach((item) => {
-        nextApproved[item.drugId] = String(
-          item.suggestedQuantity ?? item.approvedQuantity ?? item.requestedQuantity
-        );
         nextQuantities[item.drugId] = String(
           Math.min(item.outstandingQuantity ?? 0, item.warehouseQuantity ?? 0)
         );
       });
-      setApproved(nextApproved);
+      setReviewItems(
+        (result.items || []).map((item) => ({
+          drugId: item.drugId,
+          drugName: item.drugName,
+          drugCode: item.drugCode,
+          unitOfMeasure: item.unitOfMeasure,
+          asked: toNumber(item.requestedQuantity),
+          quantity: String(item.approvedQuantity ?? item.requestedQuantity)
+        }))
+      );
+      setDrugSearch('');
+      setPickedDrug(null);
+      setAddQuantity('');
+      setReviewError('');
+      setShowHistory(false);
       setQuantities(nextQuantities);
       setDispatchNotes('');
       setResolutionNote('');
@@ -113,33 +129,90 @@ export default function LgRequestsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!canReview || detail?.requisition?.status !== 'pending_approval') {
+      return;
+    }
+    lgService
+      .listLgDrugs({ status: 'active', pageSize: 100 })
+      .then((result) => setDrugs(result.items || []))
+      .catch(() => setDrugs([]));
+  }, [canReview, detail?.requisition?.status]);
+
+  const drugMatches = useMemo(() => {
+    const term = drugSearch.trim().toLowerCase();
+    if (!term || pickedDrug) {
+      return [];
+    }
+    return drugs
+      .filter((drug) => !reviewItems.some((item) => item.drugId === drug.id))
+      .filter(
+        (drug) => drug.name.toLowerCase().includes(term) || drug.code.toLowerCase().includes(term)
+      )
+      .slice(0, 8);
+  }, [drugs, drugSearch, pickedDrug, reviewItems]);
+
+  const setReviewQuantity = (drugId, value) =>
+    setReviewItems((current) =>
+      current.map((item) => (item.drugId === drugId ? { ...item, quantity: value } : item))
+    );
+
+  const removeReviewItem = (drugId) => {
+    setReviewItems((current) => current.filter((item) => item.drugId !== drugId));
+    setReviewError('');
+  };
+
+  const addReviewItem = () => {
+    if (!pickedDrug) {
+      setReviewError('Pick a drug from the list first.');
+      return;
+    }
+    const amount = toNumber(addQuantity);
+    if (amount <= 0) {
+      setReviewError('Enter a quantity greater than zero for this drug.');
+      return;
+    }
+    setReviewItems((current) => [
+      ...current,
+      {
+        drugId: pickedDrug.id,
+        drugName: pickedDrug.name,
+        drugCode: pickedDrug.code,
+        unitOfMeasure: pickedDrug.unitOfMeasure,
+        asked: 0,
+        quantity: String(amount)
+      }
+    ]);
+    setPickedDrug(null);
+    setDrugSearch('');
+    setAddQuantity('');
+    setReviewError('');
+  };
+
   const handleApprove = async () => {
     setError('');
     setNotice('');
-    const items = (detail?.items || []).map((item) => ({
-      drugId: item.drugId,
-      approvedQuantity: toNumber(approved[item.drugId])
-    }));
-    const over = items.find((entry, index) => {
-      const requested = detail.items[index].requestedQuantity;
-      return entry.approvedQuantity < 0 || entry.approvedQuantity > requested + 0.0005;
-    });
-    if (over) {
-      setError('An approved quantity cannot be more than what the facility asked for.');
+    setReviewError('');
+    if (reviewItems.length === 0) {
+      setReviewError('Keep at least one drug on the request before approving.');
       return;
     }
-    if (items.reduce((total, entry) => total + entry.approvedQuantity, 0) <= 0) {
+    const negative = reviewItems.find((item) => toNumber(item.quantity) < 0);
+    if (negative) {
+      setReviewError('Quantities cannot be negative.');
+      return;
+    }
+    const items = reviewItems
+      .map((item) => ({ drugId: item.drugId, approvedQuantity: toNumber(item.quantity) }))
+      .filter((entry) => entry.approvedQuantity > 0);
+    if (items.length === 0) {
       setError('Approve at least one unit, or reject the request instead.');
       return;
     }
 
     setBusy(true);
     try {
-      await lgService.approveRequest(
-        selectedId,
-        'Approved by the local government',
-        items
-      );
+      await lgService.approveRequest(selectedId, 'Approved by the Logistician', items);
       setNotice('Requisition approved. Only the approved quantities can be dispatched.');
       await refreshAfterAction();
     } catch (actionError) {
@@ -551,33 +624,119 @@ export default function LgRequestsPage() {
               {canReview && detail.requisition.status === 'pending_approval' ? (
                 <div className="mt-4 space-y-3">
                   <div className="rounded-xl border border-sand-200 p-3">
-                    <h3 className="text-sm font-semibold text-primary-800">Quantities to approve</h3>
+                    <h3 className="text-sm font-semibold text-primary-800">
+                      Review the drugs and quantities
+                    </h3>
                     <p className="text-[11px] text-primary-400">
-                      Lower a quantity where the warehouse cannot cover the full request.
+                      Raise or lower any quantity, remove a drug, or add one the facility did not ask
+                      for. The facility sees what you approve here.
                     </p>
                     <div className="mt-2 space-y-2">
-                      {detail.items.map((item) => (
-                        <div key={item.id} className="flex items-center gap-3">
+                      {reviewItems.length === 0 ? (
+                        <p className="text-xs text-primary-400">
+                          Every drug was removed. Add at least one to approve.
+                        </p>
+                      ) : null}
+                      {reviewItems.map((item) => (
+                        <div key={item.drugId} className="flex items-center gap-3">
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm text-primary-800">{item.drugName}</p>
                             <p className="text-[11px] text-primary-400">
-                              Asked {formatQuantity(item.requestedQuantity)} · warehouse{' '}
-                              {formatQuantity(item.warehouseQuantity)}
+                              {item.drugCode} · {item.unitOfMeasure} · asked{' '}
+                              {formatQuantity(item.asked)}
                             </p>
                           </div>
                           <input
                             type="number"
                             min="0"
-                            max={item.requestedQuantity}
                             step="any"
-                            value={approved[item.drugId] ?? ''}
-                            onChange={(event) =>
-                              setApproved((current) => ({ ...current, [item.drugId]: event.target.value }))
-                            }
+                            value={item.quantity}
+                            onChange={(event) => setReviewQuantity(item.drugId, event.target.value)}
+                            aria-label={`Approved quantity for ${item.drugName}`}
                             className="field w-20"
                           />
+                          <button
+                            type="button"
+                            onClick={() => removeReviewItem(item.drugId)}
+                            aria-label={`Remove ${item.drugName}`}
+                            className="rounded-lg p-1.5 text-maroon-600 transition hover:bg-maroon-50"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
                         </div>
                       ))}
+                    </div>
+
+                    <div className="mt-3 space-y-2 rounded-xl border border-sand-200 bg-sand-50/60 p-3">
+                      <p className="text-xs font-semibold text-primary-800">
+                        Add a drug the facility did not ask for
+                      </p>
+                      <div className="relative">
+                        <Search
+                          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-300"
+                          aria-hidden="true"
+                        />
+                        <input
+                          value={drugSearch}
+                          onChange={(event) => {
+                            setDrugSearch(event.target.value);
+                            setPickedDrug(null);
+                          }}
+                          placeholder="Type a drug name or code"
+                          autoComplete="off"
+                          aria-label="Search drugs to add"
+                          className="field pl-9"
+                        />
+                        {drugMatches.length > 0 ? (
+                          <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-sand-200 bg-white shadow-lg">
+                            {drugMatches.map((drug) => (
+                              <li key={drug.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPickedDrug(drug);
+                                    setDrugSearch(`${drug.name} (${drug.code})`);
+                                    setReviewError('');
+                                  }}
+                                  className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-primary-50"
+                                >
+                                  <span className="font-semibold text-primary-800">{drug.name}</span>
+                                  <span className="text-primary-400">
+                                    {drug.code} · {drug.unitOfMeasure}
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                      {pickedDrug ? (
+                        <p className="text-[11px] font-semibold text-leaf-600">
+                          Selected: {pickedDrug.name} ({pickedDrug.code}) · {pickedDrug.unitOfMeasure}
+                        </p>
+                      ) : null}
+                      <div className="flex items-end gap-2">
+                        <div className="w-28">
+                          <label className="field-label" htmlFor="lg-add-quantity">
+                            Quantity
+                          </label>
+                          <input
+                            id="lg-add-quantity"
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={addQuantity}
+                            onChange={(event) => setAddQuantity(event.target.value)}
+                            placeholder="0"
+                            className="field py-1.5 text-sm"
+                          />
+                        </div>
+                        <Button type="button" size="sm" variant="outline" onClick={addReviewItem}>
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          Add
+                        </Button>
+                      </div>
+                      {reviewError ? <p className="text-xs text-maroon-600">{reviewError}</p> : null}
                     </div>
                   </div>
 
@@ -673,18 +832,26 @@ export default function LgRequestsPage() {
               ) : null}
 
               <div className="mt-4 border-t border-sand-100 pt-3">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-primary-400">
-                  History
-                </h3>
-                <ul className="mt-2 space-y-1.5">
-                  {detail.events.map((event) => (
-                    <li key={event.id} className="text-xs text-primary-600">
-                      <span className="font-semibold">{titleCase(event.eventType)}</span> ·{' '}
-                      {event.actorFullName} · {formatDate(event.createdAt)}
-                      {event.comment ? ` — ${event.comment}` : ''}
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  type="button"
+                  onClick={() => setShowHistory((current) => !current)}
+                  aria-expanded={showHistory}
+                  className="flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-primary-400"
+                >
+                  <span>History ({detail.events.length})</span>
+                  <span>{showHistory ? 'Hide' : 'Show'}</span>
+                </button>
+                {showHistory ? (
+                  <ul className="mt-2 max-h-52 space-y-1.5 overflow-y-auto">
+                    {detail.events.map((event) => (
+                      <li key={event.id} className="text-xs text-primary-600">
+                        <span className="font-semibold">{titleCase(event.eventType)}</span> ·{' '}
+                        {event.actorFullName} · {formatDate(event.createdAt)}
+                        {event.comment ? ` — ${event.comment}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             </div>
           ) : null}
